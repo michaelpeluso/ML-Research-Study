@@ -23,7 +23,7 @@ def plot_curve(x, y_list, labels=None, xlabel="", ylabel="", title="", save_path
     else:
         x_pos = x
     
-    for y, lbl in zip(y_list, labels):
+    for y, lbl in zip(y_list, labels): # type: ignore
         plt.plot(x_pos, y, label=lbl, marker=marker)
 
     plt.xlabel(xlabel)
@@ -31,7 +31,7 @@ def plot_curve(x, y_list, labels=None, xlabel="", ylabel="", title="", save_path
     plt.title(title)
     plt.grid(True)
     
-    if any(labels):
+    if any(labels): # type: ignore
         plt.legend()
     if save_path:
         plt.savefig(save_path)
@@ -283,7 +283,7 @@ def stitch_images(img_dir, title=""):
     rows = math.ceil(n / cols)
     w = min(i.width for i in imgs)
     h = min(i.height for i in imgs)
-    imgs = [im.resize((w, h), Image.LANCZOS) for im in imgs]
+    imgs = [im.resize((w, h), Image.LANCZOS) for im in imgs] # type: ignore
 
     
     title_h = 100
