@@ -1,5 +1,4 @@
 import os
-from category_encoders import CountEncoder, TargetEncoder
 import joblib
 import numpy as np
 import pandas as pd
@@ -8,6 +7,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
+from category_encoders import CountEncoder, TargetEncoder
 import torch
 from torch.utils.data import TensorDataset, DataLoader
 
@@ -16,6 +16,7 @@ def load_or_process_data(dataset: str, target: str, method: str, subsample: floa
     print(f"Loading {dataset} data.")
     os.makedirs(cache_dir, exist_ok=True)
     cache_file = os.path.join(cache_dir, f"{dataset}_subsample_{int(subsample*100)}.pkl")
+    col_log_data = {}
 
     if os.path.exists(cache_file):
         # load data from cache if available
@@ -26,7 +27,6 @@ def load_or_process_data(dataset: str, target: str, method: str, subsample: floa
             return arr.memory_usage(deep=True) if hasattr(arr, "memory_usage") else arr.nbytes
         mem_before = mem_after = (get_mem_mb(X_train) + get_mem_mb(X_val) + get_mem_mb(X_test) + get_mem_mb(y_train) + get_mem_mb(y_val) + get_mem_mb(y_test)) / (1024**2)
 
-    
     else:
         # load raw data
         df = pd.DataFrame()
@@ -55,7 +55,7 @@ def load_or_process_data(dataset: str, target: str, method: str, subsample: floa
         X_temp, X_test, y_temp, y_test = train_test_split(X, y, test_size=test_size, random_state=seed, stratify=(y if method == "classification" else None)) # train/test split
         X_train, X_val, y_train, y_val = train_test_split(X_temp, y_temp, test_size=val_size/(1-test_size), random_state=seed, stratify=(y_temp if method=="classification" else None)) # second split temp into train and val
         # transform columns types (cardinality)
-        X_train, X_val, X_test = transform_columns(dataset, X_train, X_val, X_test, y_train)
+        X_train, X_val, X_test, col_log_data = transform_columns(dataset, X_train, X_val, X_test, y_train)
 
         # cache data
         joblib.dump((X_train, X_val, X_test, y_train, y_val, y_test), cache_file)
@@ -75,11 +75,11 @@ def load_or_process_data(dataset: str, target: str, method: str, subsample: floa
         'target_distribution': y_train.value_counts().to_dict() if 'classification' in method.lower() else None,
         'memory_before_clean': "Used cashed memory" if mem_before==mem_after else f"{mem_before} MB",
         'memory_after_clean': f"{mem_after} MB",
-        'memory_reduction': f"{round((mem_before - mem_after) / mem_before * 100, 2)}%" if mem_before==mem_after else "0%", 
+        'memory_reduction': f"{round((mem_before - mem_after) / mem_before * 100, 2)}%" if mem_before==mem_after else "0%",
     }
-    print(info)
+    info.update(col_log_data)
 
-    return train_loader, val_loader, test_loader, y_test, info
+    return train_loader, val_loader, test_loader, info
 
 
 def wrap_into_loaders(method, X_train, X_val, X_test, y_train, y_val, y_test):
@@ -103,7 +103,7 @@ def wrap_into_loaders(method, X_train, X_val, X_test, y_train, y_val, y_test):
     return train_loader, val_loader, test_loader
 
 
-def transform_columns(dataset, X_train, X_val, X_test, y_train) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def transform_columns(dataset, X_train, X_val, X_test, y_train) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
     # transform columns types (cardinality)
     numeric_cols = X_train.select_dtypes(include=["float", "int"]).columns.tolist()
     categorical_cols = X_train.select_dtypes(include=["category", "object"]).columns.tolist()
@@ -155,8 +155,14 @@ def transform_columns(dataset, X_train, X_val, X_test, y_train) -> tuple[pd.Data
     X_train = preprocessor.fit_transform(X_train, y_train)
     X_val = preprocessor.transform(X_val)
     X_test = preprocessor.transform(X_test)
+
+    log_data = {
+        'numeric_features': len(numeric_cols),
+        'categorical_features': len(categorical_cols),
+        'high_cardinality_features': len(high_card_cols) if high_card_cols else 0,
+    }
     
-    return X_train, X_val, X_test # type: ignore
+    return X_train, X_val, X_test, log_data # type: ignore
 
 
 # clean either dataset
