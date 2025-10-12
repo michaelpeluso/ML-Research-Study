@@ -121,13 +121,12 @@ class MLLogger:
             step_logs = [log for log in self.current_logs if 'performance' in log]
             if step_logs:
                 total_time = sum(log['performance']['duration_seconds'] for log in step_logs)
-                total_mem = sum(log['performance']['memory_diff_mb'] for log in step_logs)
+                total_mem_delta = sum(log['performance']['memory_diff_mb'] for log in step_logs)
                 peak_mem = max(log['performance']['peak_memory_mb'] for log in step_logs)
-
                 f.write("PERFORMANCE SUMMARY\n")
                 f.write("-" * 30 + "\n")
-                f.write(f"Total Runtime: {total_time:.3f} seconds ({total_time/60:.2f} minutes)\n")
-                f.write(f"Total Memory Delta: {total_mem:+.1f} MB\n")
+                f.write(f"Total Runtime: {total_time:.3f} seconds ({total_time / 60:.2f} minutes)\n")
+                f.write(f"Total Memory Delta: {total_mem_delta:+.1f} MB\n")
                 f.write(f"Peak Memory Usage: {peak_mem:.1f} MB\n")
                 f.write(f"Number of Steps: {len(step_logs)}\n")
                 f.write(f"Average Step Time: {total_time/len(step_logs):.3f} seconds\n")
@@ -200,6 +199,12 @@ class MLLogger:
                         if v is not None:
                             if isinstance(v, (int, float)):
                                 f.write(f"     {k.replace('_', ' ').title()}: {v:,.4f}\n")
+                            elif isinstance(v, dict):
+                                f.write(f"     {k.replace('_', ' ').title()}:\n")
+                                for sub_k, sub_v in v.items():
+                                    f.write(f"       {sub_k}: {sub_v}\n")
+                            elif isinstance(v, list):
+                                f.write(f"     {k.replace('_', ' ').title()}: {len(v)} items\n")
                             else:
                                 f.write(f"     {k.replace('_', ' ').title()}: {v}\n")
                 f.write("\n")

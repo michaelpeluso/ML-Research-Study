@@ -1,6 +1,6 @@
 import os, random, numpy as np, torch
 
-from src.ModelingExperiment import ModelingExperiment
+from src.experiment import Experiment
 
 def set_seed(s=4242):
     random.seed(s); np.random.seed(s); torch.manual_seed(s); torch.cuda.manual_seed_all(s)
@@ -18,54 +18,50 @@ def main():
     # ------------------
     # Hotels (~120k × 32)
     # ------------------
-
-    # Neural Network
-    hotels_nn_experiment = ModelingExperiment(
+    hotels_nn_experiment = Experiment(
         id=5,
         dataset="hotels",
         target="is_canceled",
         method="classification",
-        model="nn",
         subsample=subsample or .10,
-        seed=seed,
-        tuning=tuning,
-        cv_splits=5,
-        combination_cap=2,
-        best_params={'estimator__max_iter': 15, 'estimator__learning_rate_init': 0.01, 'estimator__hidden_layer_sizes': 512, 'estimator__alpha': 0.001, 'estimator__activation': 'relu'}
     )
+
+    backbone_configs = [
+        {'name': 'nn_2', 'max_iter': 15, 'learning_rate_init': 0.05, 'hidden_layer_sizes': (512, 512), 'alpha': 1e-05, 'activation': 'tanh'},  # shallow: 2 layers
+        {'name': 'nn_4', 'max_iter': 15, 'learning_rate_init': 0.05, 'hidden_layer_sizes': (256, 256, 128, 128), 'alpha': 1e-05, 'activation': 'tanh'}  # deep: 4 layers
+    ]
+
+    for config in backbone_configs:
+        hotels_nn_experiment.best_params.update(config)
+        hotels_nn_experiment.update_logs()
+        hotels_nn_experiment.ml_logger.current_logs = []
+        hotels_nn_experiment.save_path = f"figures/{hotels_nn_experiment.dataset}/{config['name']}"
+        os.makedirs(hotels_nn_experiment.save_path, exist_ok=True)
+        hotels_nn_experiment.run_part1_ro()
 
     # ------------------
     # US Accidents (~8M × 46)
     # ------------------
-
-    # Neural Network
-    accidents_nn_experiment = ModelingExperiment(
+    accidents_nn_experiment = Experiment(
         id=10,
         dataset="accidents",
         target="Duration_Seconds",
         method="regression",
-        model="nn",
-        subsample=subsample or 0.8,  # > 80%
-        seed=seed,
-        tuning=tuning,
-        cv_splits=3,
-        combination_cap=10,
-        best_params={'estimator__max_iter': 10, 'estimator__learning_rate_init': 0.005, 'estimator__alpha': 0.0001, 'estimator__activation': 'tanh'}
+        subsample=subsample or 0.8  # > 80%
     )
 
-    
-    # ------------------
-    # Execute runners
-    # ------------------
-    hotels_nn_experiment.best_params.update({'hidden_layer_sizes': (512, 512)})
-    hotels_nn_experiment.run()
-    hotels_nn_experiment.best_params.update({'hidden_layer_sizes': (256, 256, 128, 128)})
-    hotels_nn_experiment.run()
-    
-    accidents_nn_experiment.best_params.update({'hidden_layer_sizes': (512, 512)})
-    accidents_nn_experiment.run()
-    accidents_nn_experiment.best_params.update({'hidden_layer_sizes': (256, 256, 128, 128)})
-    accidents_nn_experiment.run()
+    backbone_configs = [
+        {'name': 'nn_2', 'max_iter': 5, 'learning_rate_init': 0.01, 'hidden_layer_sizes': (512, 512), 'alpha': 0.001, 'activation': 'relu'},  # shallow: 2 layers
+        {'name': 'nn_4', 'max_iter': 5, 'learning_rate_init': 0.01, 'hidden_layer_sizes': (256, 256, 128, 128), 'alpha': 0.001, 'activation': 'relu'}  # deep: 4 layers
+    ]
+
+    for config in backbone_configs:
+        accidents_nn_experiment.best_params.update(config)
+        accidents_nn_experiment.update_logs()
+        accidents_nn_experiment.ml_logger.current_logs = []
+        accidents_nn_experiment.save_path = f"figures/{accidents_nn_experiment.dataset}/{config['name']}"
+        os.makedirs(accidents_nn_experiment.save_path, exist_ok=True)
+        accidents_nn_experiment.run_part1_ro()
     
 
 if __name__ == "__main__":

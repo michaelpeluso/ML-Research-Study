@@ -61,9 +61,6 @@ def load_or_process_data(dataset: str, target: str, method: str, subsample: floa
         joblib.dump((X_train, X_val, X_test, y_train, y_val, y_test), cache_file)
         print(f"Saved processed dataset to {cache_file}")
 
-    # convert to PyTorch tensors and wrap on DataLoader
-    train_loader, val_loader, test_loader = wrap_into_loaders(method, X_train, X_val, X_test, y_train, y_val, y_test)
-
     info = { # data for logging
         'used_cached_df' : os.path.exists(cache_file),
         'n_loaded_rows': total_rows, 
@@ -79,10 +76,10 @@ def load_or_process_data(dataset: str, target: str, method: str, subsample: floa
     }
     info.update(col_log_data)
 
-    return train_loader, val_loader, test_loader, info
+    return X_train, X_val, X_test, y_train, y_val, y_test, info
 
 
-def wrap_into_loaders(method, X_train, X_val, X_test, y_train, y_val, y_test):
+def wrap_into_loaders(method, X_train, X_val, X_test, y_train, y_val, y_test) -> tuple[DataLoader[tuple[torch.Tensor, ...]], DataLoader[tuple[torch.Tensor, ...]], DataLoader[tuple[torch.Tensor, ...]]]:
     # https://edstem.org/us/courses/81923/discussion/6999408
     # X_train, y_train, X_val, y_val, X_test, y_test are numpy arrays after your SAME preprocessing.
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

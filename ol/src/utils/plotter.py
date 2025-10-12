@@ -11,6 +11,7 @@ from sklearn.inspection import DecisionBoundaryDisplay, permutation_importance
 from sklearn.metrics import ConfusionMatrixDisplay, auc, precision_recall_curve, roc_curve
 from sklearn.model_selection import cross_val_score
 from sklearn.tree import plot_tree
+from typing import List, Optional, Union
 
 matplotlib.use('Agg')
 
@@ -154,19 +155,40 @@ def plot_feature_importance(feature_importances, n_count=None, title="Decision T
     else: plt.show()
     plt.close()
 
-def plot_epoch_curve(train_losses, val_losses, save_path=None):
-    if not train_losses: return
-    plt.figure(figsize=(8, 6))
-    plt.plot(train_losses, label="Train Loss")
-    plt.plot(val_losses, label="Validation Loss")
-    plt.axvline(x=len(train_losses)-1, linestyle="--", label="Early Stopping")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.title("Epoch Curve")
-    plt.legend()
-    plt.grid(True)
-    if save_path: plt.savefig(save_path)
-    else: plt.show()
+def plot_epoch_curve(
+    x: List[Union[int, float]], 
+    y: List[float], 
+    title: str = "RO Curve", 
+    save_path: Optional[str] = None,
+    log_x: bool = False,
+    caption: Optional[str] = None
+) -> None:
+    '''
+    Plot RO curve with optional log-x and caption.
+    '''
+    plt.figure(figsize=(8, 6))  # set figure size
+    
+    # plot data
+    plt.plot(x, y, label="Loss")
+    
+    plt.xlabel("Evals")  # x label
+    plt.ylabel("Loss")  # y label
+    plt.title(title)  # title
+    plt.grid(True)  # add grid
+    
+    # log x scale
+    if log_x:
+        plt.xscale('log')
+    
+    # add caption
+    if caption:
+        plt.figtext(0.5, 0.01, caption, wrap=True, horizontalalignment='center', fontsize=8)
+    
+    plt.legend()  # add legend
+    if save_path:
+        plt.savefig(save_path)  # save plot
+    else:
+        plt.show()
     plt.close()
 
 def plot_residuals(y_true, y_pred, title="Residual Plot", save_path=None):
@@ -182,7 +204,7 @@ def plot_residuals(y_true, y_pred, title="Residual Plot", save_path=None):
     else: plt.show()
     plt.close()
 
-def plot_complexity_curve(complexity_data, title="Model Complexity Curve", scoring='score', save_path=None):
+def plot_complexity_curve(complexity_data, scoring='R2', save_path=None):
     param_name = complexity_data['param_name'].replace('estimator__', '').title()
     param_values = complexity_data['param_values']
     train_mean = complexity_data['train_scores_mean']
@@ -211,7 +233,7 @@ def plot_complexity_curve(complexity_data, title="Model Complexity Curve", scori
 
     plt.xlabel(param_name.replace('_', ' ').title())
     plt.ylabel(f'{scoring} Score')
-    plt.title(title)
+    plt.title("Model Complexity Curve")
     plt.legend()
     plt.grid(True, linestyle='--', alpha=0.7)
     plt.xticks(x_pos, param_labels, rotation=45)
