@@ -1,16 +1,15 @@
 import os, math
 import matplotlib
 import matplotlib.pyplot as plt
+import seaborn as sns
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 from sklearn import tree
 from sklearn.base import is_classifier
 from sklearn.calibration import LinearSVC, calibration_curve
 from sklearn.datasets import make_blobs
-from sklearn.inspection import DecisionBoundaryDisplay, permutation_importance
 from sklearn.metrics import ConfusionMatrixDisplay, auc, precision_recall_curve, roc_curve
 from sklearn.model_selection import cross_val_score
-from sklearn.tree import plot_tree
 from typing import List, Optional, Union
 
 matplotlib.use('Agg')
@@ -155,40 +154,25 @@ def plot_feature_importance(feature_importances, n_count=None, title="Decision T
     else: plt.show()
     plt.close()
 
-def plot_epoch_curve(
-    x: List[Union[int, float]], 
-    y: List[float], 
-    title: str = "RO Curve", 
-    save_path: Optional[str] = None,
-    log_x: bool = False,
-    caption: Optional[str] = None
-) -> None:
-    '''
-    Plot RO curve with optional log-x and caption.
-    '''
-    plt.figure(figsize=(8, 6))  # set figure size
-    
-    # plot data
-    plt.plot(x, y, label="Loss")
-    
+def plot_epoch_curve(x: List[Union[int, float]], y: List[float], title: str = "RO Curve", save_path: Optional[str] = None, log_x: bool = False, caption: Optional[str] = None, std: Optional[List[float]] = None) -> None:
+    plt.figure(figsize=(8, 6))
+    plt.plot(x, y, label="Mean Loss")
     plt.xlabel("Evals")  # x label
     plt.ylabel("Loss")  # y label
     plt.title(title)  # title
     plt.grid(True)  # add grid
     
-    # log x scale
-    if log_x:
-        plt.xscale('log')
-    
-    # add caption
-    if caption:
-        plt.figtext(0.5, 0.01, caption, wrap=True, horizontalalignment='center', fontsize=8)
-    
-    plt.legend()  # add legend
-    if save_path:
-        plt.savefig(save_path)  # save plot
-    else:
-        plt.show()
+    # add stability bands if std provided
+    if std is not None and len(std) == len(y):
+        plt.fill_between(x, [y[i] - std[i] for i in range(len(y))], [y[i] + std[i] for i in range(len(y))], 
+                       color='blue', alpha=0.2, label='± Std Dev')
+
+    if log_x: plt.xscale('log')    
+    if caption: plt.figtext(0.5, 0.01, caption, wrap=True, horizontalalignment='center', fontsize=8)    
+    plt.legend()  
+
+    if save_path: plt.savefig(save_path)
+    else: plt.show()
     plt.close()
 
 def plot_residuals(y_true, y_pred, title="Residual Plot", save_path=None):
@@ -324,3 +308,10 @@ def stitch_images(img_dir, title=""):
     out_path = os.path.join(img_dir, filename)
     if os.path.exists(out_path): os.remove(out_path)
     out.save(out_path)
+
+def plot_heatmaps(data, labels, x_labels, title, save_path):
+    plt.figure(figsize=(10, 6))
+    sns.heatmap(data, xticklabels=x_labels, yticklabels=labels, cmap='viridis')
+    plt.title(title)
+    plt.savefig(save_path)
+    plt.close()

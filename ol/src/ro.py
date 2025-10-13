@@ -93,7 +93,7 @@ def rhc(
             improvement = best_loss - current_loss  # compare initial point to global best
             if improvement > min_delta:
                 last_improvement_eval = evals  # reset if initial point is better
-                print(f"[RHC] Initial point at eval {evals} better than best: loss={current_loss:.6f}")
+                print(f"[RHC] Initial point at eval {evals} better than best: loss={current_loss:.6f} (improvement={improvement:.6f})")
             evals += 1
             history.append((evals, current_loss))
 
@@ -249,65 +249,74 @@ Returns: optimized model, history [(evals, loss)] for analysis.
 Optional: uniform plateau rule for early stopping if improvement < min_delta.
 """
 def ga(
-        model: nn.Module, 
-        val_loader: torch.utils.data.DataLoader, 
-        loss_fn: Callable, 
-        device: torch.device, 
-        max_evals: int = 10000, 
-        pop_size: int = 50, 
-        mutation_rate: float = 0.1, 
-        mutation_std: float = 0.001, 
-        plateau_threshold: int = 1000, 
-        min_delta: float = 1e-6, 
-        logger: MLLogger | None = None
-    ) -> Tuple[nn.Module, List[Tuple[int, float]]]:
+    model: nn.Module,
+    val_loader: torch.utils.data.DataLoader,
+    loss_fn: Callable,
+    device: torch.device,
+    pop_size: int = 30,  # coarser for speed/wall-clock
+    max_evals: int = 10000,
+    mutation_rate: float = 0.1,
+    mutation_std: float = 0.001,
+    plateau_threshold: int = 1000,
+    min_delta: float = 1e-6,
+    logger: MLLogger | None = None
+) -> Tuple[nn.Module, List[Tuple[int, float]]]:
+    '''
+    genetic algorithm for ro. # population, tournament select, single-point crossover, mutation, elitism.
+    '''
     print(f"[GA] Starting with {sum(p.numel() for p in model.parameters())} parameters, pop_size={pop_size}, max_evals={max_evals}")
     if logger is None: logger = MLLogger()
     start_time = time.perf_counter()
-    last_improvement_eval = pop_size  # plateau tracking
-    
-    # create new individual with random perturbation
-    def create_individual() -> torch.Tensor:
-        return get_trainable_params(model) + torch.randn_like(get_trainable_params(model), device=device) * 0.1
+    last_improvement_eval = 0  # plateau tracking
+    history = []  # evals, min_fit pairs
+    evals = 0
 
-    # single-point crossover
-    def crossover(p1: torch.Tensor, p2: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        pivot = torch.randint(1, len(p1) - 1, (1,), device=device).item()
-        return torch.cat((p1[:pivot], p2[pivot:])), torch.cat((p2[:pivot], p1[pivot:]))
+    with logger.log_step("Genetic Algorithm") as step_info:
+        # init population with gaussian noise
+        param_size = len(get_trainable_params(model))
+        pop = [torch.randn(param_size, device=device) * 0.1 for _ in range(pop_size)]  # small init scale
+        fitness = [validation_objective(ind, model, val_loader, loss_fn, device) for ind in pop]
+        evals += pop_size
+        min_fit = min(fitness)
+        prev_min_fit = min_fit + 1  # init for improvement check
+        history.append((evals, min_fit))
+        print(f"[GA] Init complete: evals={evals}/{max_evals}, best_fitness={min_fit:.6f}")
 
-    # apply gaussian mutation
-    def mutate(ind: torch.Tensor) -> torch.Tensor:
-        mask = torch.rand(len(ind), device=device) < mutation_rate
-        return ind + mask.float() * torch.randn_like(ind, device=device) * mutation_std
+        # tournament selection param: small for speed, larger for diversity
+        tournament_k = 2
 
-    print(f"[GA] Initializing population of size {pop_size}")
-    pop = [create_individual() for _ in range(pop_size)]
-    fitness = [validation_objective(ind, model, val_loader, loss_fn, device) for ind in pop]  # minimize loss directly
-    evals = pop_size
-    prev_min_fit = float('inf')  # init prev to ensure first update
-    history = [(evals, min(fitness))]  # track loss
-    print(f"[GA] Initial population evaluated: evals={evals}, best_fitness={min(fitness):.6f}")
+        # crossover rate: 0.5-0.8 for blending; pilot-tune
+        crossover_rate = 0.6
 
-    with logger.log_step("Genetic Algorithms") as step_info:
-
+        # evolve until max_evals or plateau
         generation = 1
         while evals < max_evals:
-            # sort by fitness (ascending for min loss)
-            idx = torch.argsort(torch.tensor(fitness, device=device))
-            pop = [pop[i] for i in idx]  # reorder pop
-            fitness = [fitness[i] for i in idx]  # reorder fitness
+            # tournament selection: select fittest half
+            selected_indices = []  # build parent indices
+            for _ in range(pop_size // 2):
+                candidates = torch.randperm(pop_size, device=device)[:tournament_k]
+                winner = candidates[torch.argmin(torch.tensor([fitness[i] for i in candidates], device=device))]
+                selected_indices.append(winner)
+            parents = [pop[i] for i in selected_indices]
 
-            # elitism: keep best
-            next_pop = [pop[0].clone()]
+            # crossover with rate: single-point
+            next_pop = [pop[torch.argmin(torch.tensor(fitness, device=device))]]  # elite: keep best
+            while len(next_pop) < pop_size:
+                idx1, idx2 = torch.randint(0, len(parents), (2,), device=device).tolist()
+                p1, p2 = parents[idx1], parents[idx2]
+                if torch.rand(1, device=device).item() < crossover_rate:
+                    cross_pt = int(torch.rand(1, device=device).item() * len(p1))  # random split point
+                    o1 = torch.cat((p1[:cross_pt], p2[cross_pt:]))
+                    o2 = torch.cat((p2[:cross_pt], p1[cross_pt:]))
+                else:
+                    o1, o2 = p1.clone(), p2.clone()
 
-            # tournament selection and crossover
-            for _ in range((pop_size - 1) // 2):
-                idx1 = int(torch.randint(0, pop_size // 2, (1,), device=device).item())
-                idx2 = int(torch.randint(0, pop_size // 2, (1,), device=device).item())
-                p1, p2 = pop[idx1], pop[idx2]
-                o1, o2 = crossover(p1, p2)
-                o1 = mutate(o1)
-                o2 = mutate(o2)
+                # mutate: gaussian with rate
+                if torch.rand(1, device=device).item() < mutation_rate:
+                    o1 += torch.randn_like(o1, device=device) * mutation_std
+                if torch.rand(1, device=device).item() < mutation_rate:
+                    o2 += torch.randn_like(o2, device=device) * mutation_std
+
                 next_pop.extend([o1, o2])
 
             # evaluate new population (skip elite)
@@ -361,7 +370,6 @@ def ga(
             'history': history
         })
         return model, history
-
 
 # example usage
 if __name__ == "__main__":

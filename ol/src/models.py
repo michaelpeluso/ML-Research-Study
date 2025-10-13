@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from typing import Callable, List, Tuple, Union
 
 def set_seed(seed=4242) -> int:
     # set random seed for reproducibility per report
@@ -14,16 +15,16 @@ class BaseMLP(nn.Module):
     """
     Base MLP class without dropout.
     """
-    def __init__(self, in_dim, hidden, out_dim):
+    def __init__(self, in_dim: int, hidden: Union[List[int], Tuple[int, ...]], out_dim: int, activation: str = 'relu') -> None:  # type: ignore
         # initialize base mlp with input, hidden, and output dims
         super().__init__()
         layers = []
-        # ensure hidden is a list of integers, unpack if tuple
         hidden_list = list(hidden) if isinstance(hidden, tuple) else hidden
         dims = [in_dim] + hidden_list
+        act_fn = nn.Tanh() if activation == 'tanh' else nn.ReLU()
         for i in range(len(dims) - 1):
-            # add linear layer and relu for each hidden step
-            layers += [nn.Linear(dims[i], dims[i + 1]), nn.ReLU()]
+            # add linear layer and activation for each hidden step
+            layers += [nn.Linear(dims[i], dims[i + 1]), act_fn]
         layers += [nn.Linear(hidden_list[-1] if hidden_list else in_dim, out_dim)]
         self.net = nn.Sequential(*layers)
 
@@ -35,18 +36,16 @@ class MLP(BaseMLP):
     """
     Extended MLP with dropout. Use hidden sizes and activations for fixed backbone.
     """
-    def __init__(self, in_dim, hidden=[512, 512], out_dim=4, dropout_p=0.0):
-        # initialize mlp with optional dropout for part 3
-        super().__init__(in_dim, hidden, out_dim)
+    def __init__(self, in_dim: int, hidden: Union[List[int], Tuple[int, ...]] = [512, 512], out_dim: int = 4, dropout_p: float = 0.0, activation: str = 'relu') -> None:  # type: ignore
+        super().__init__(in_dim, hidden, out_dim, activation=activation)  # pass activation to base
         if dropout_p > 0:
-            # insert dropout after each relu if enabled
+            # insert dropout after each activation if enabled
             new_layers = []
             for layer in self.net:
                 new_layers.append(layer)
-                if isinstance(layer, nn.ReLU):
+                if isinstance(layer, (nn.ReLU, nn.Tanh)):  # lowercase: check for relu or tanh
                     new_layers.append(nn.Dropout(p=dropout_p))
             self.net = nn.Sequential(*new_layers)
-
     def linear_layers(self):
         # extract linear layers for freezing
         return [m for m in self.modules() if isinstance(m, nn.Linear)]

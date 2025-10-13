@@ -11,8 +11,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def main():
 
-    seed=1
-    tuning=True
     subsample=0.1 # L2 testing
 
     # ------------------
@@ -23,7 +21,7 @@ def main():
         dataset="hotels",
         target="is_canceled",
         method="classification",
-        subsample=subsample or .10,
+        subsample=subsample or 1.0,
     )
 
     backbone_configs = [
@@ -37,7 +35,8 @@ def main():
         hotels_nn_experiment.ml_logger.current_logs = []
         hotels_nn_experiment.save_path = f"figures/{hotels_nn_experiment.dataset}/{config['name']}"
         os.makedirs(hotels_nn_experiment.save_path, exist_ok=True)
-        hotels_nn_experiment.run_part1_ro()
+        hotels_nn_experiment.run_part2_ablations()
+        #hotels_nn_experiment.run_part1_ro()
 
     # ------------------
     # US Accidents (~8M × 46)
