@@ -167,7 +167,8 @@ def sa(
         loss_fn: Callable, 
         device: torch.device, 
         max_evals: int = 10000, 
-        initial_temp: float = 10.0, 
+        initial_temp: float = 50.0, # increased for more exploration
+        decay_rate=0.999,   # slower cooling
         step_size: float = 0.1, 
         plateau_threshold: int = 1000, 
         min_delta: float = 1e-6,  # min improvement threshold

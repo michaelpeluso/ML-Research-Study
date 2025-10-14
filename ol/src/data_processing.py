@@ -12,7 +12,8 @@ import torch
 from torch.utils.data import TensorDataset, DataLoader
 
 # load data from cache if available
-def load_or_process_data(dataset: str, target: str, method: str, subsample: float, seed: int, cache_dir="cache", test_size=0.2, val_size=0.2):
+def load_or_process_data(dataset: str, target: str, method: str, subsample: float, seed: int, cache_dir="cache", test_size=0.2, val_size=0.2
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, pd.Series, dict]:
     print(f"Loading {dataset} data.")
     os.makedirs(cache_dir, exist_ok=True)
     cache_file = os.path.join(cache_dir, f"{dataset}_subsample_{int(subsample*100)}.pkl")
@@ -32,8 +33,7 @@ def load_or_process_data(dataset: str, target: str, method: str, subsample: floa
         df = pd.DataFrame()
         df = pd.read_csv("data/hotel_bookings.csv" if dataset == "hotels" else "data/US_Accidents_March23_1M_rows.csv")
         if len(df) == 0:
-            print("No data to extract. Place .csv file in '/data'.")
-            return df
+            raise ValueError(f"Dataset {dataset} is empty or not found.")
         
         # subsample
         df = subsample_dataset(df, target, subsample, seed, method)
@@ -79,7 +79,7 @@ def load_or_process_data(dataset: str, target: str, method: str, subsample: floa
     return X_train, X_val, X_test, y_train, y_val, y_test, info
 
 
-def wrap_into_loaders(method, X_train, X_val, X_test, y_train, y_val, y_test) -> tuple[DataLoader[tuple[torch.Tensor, ...]], DataLoader[tuple[torch.Tensor, ...]], DataLoader[tuple[torch.Tensor, ...]]]:
+def wrap_into_loaders(method, X_train, X_val, X_test, y_train, y_val, y_test) -> tuple[DataLoader, DataLoader, DataLoader]:
     # https://edstem.org/us/courses/81923/discussion/6999408
     # X_train, y_train, X_val, y_val, X_test, y_test are numpy arrays after your SAME preprocessing.
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

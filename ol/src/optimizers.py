@@ -160,7 +160,7 @@ class AdamWDecoupled(AdamW):
     def __init__(self, params, lr: float,
                  betas: Tuple[float, float] = (0.9, 0.999),
                  eps: float = 1e-8,
-                 weight_decay: float = 0.0,
+                 weight_decay: float = 0.01, 
                  amsgrad: bool = False,
                  maximize: bool = False,
                  foreach: Optional[bool]|None=None,
@@ -175,7 +175,7 @@ class AdamWDecoupled(AdamW):
                          fused=fused)
 
 
-def optimizer_factory(model: torch.nn.Module, kind: str, lr: float = 1e-3, **kwargs: Dict[str, Any]):
+def optimizer_factory(model: torch.nn.Module, kind: str, lr: float = 1e-3, **kwargs: Dict[str, Any]) -> Optional[Optimizer]:
     # filter trainable params
     params = [p for p in model.parameters() if p.requires_grad]
 

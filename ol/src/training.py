@@ -32,7 +32,9 @@ def train_to_budget(
     loss_fn: Callable,
     device: torch.device,
     log_interval: int = 100,
-    optimizer_name: str = "unknown"  # name of the optimizer for tagging logs
+    optimizer_name: str = "unknown",  # name of the optimizer for tagging logs
+    lr_decay_rate: float = 1.0,  # changed: optional decay factor (e.g., 0.995 for exp decay)
+    decay_every: int = 1000  # changed: apply decay every N updates
 ) -> Tuple[List[float], List[Dict[str, float]], int, float]:
     '''
     train model with optimizer until max_updates exceeded or val_loss <= l_threshold.
@@ -72,17 +74,14 @@ def train_to_budget(
 
                 if val_loss <= l_threshold and steps_to_l == max_updates:
                     steps_to_l = updates
-
-                # log progress update
-                elapsed_time = time.perf_counter() - start_time
-                print(f"[{optimizer_name}] Update {updates}/{max_updates}: val_loss={val_loss:.4f}, elapsed_time={elapsed_time:.2f}s")
-
+                
             if updates >= max_updates:
                 break
 
         # log epoch completion
         epoch_time = time.perf_counter() - epoch_start_time
-        print(f"[{optimizer_name}] Completed epoch with {len(train_loader)} batches, time={epoch_time:.2f}s, updates={updates}")
+        if curves: print(f"[{optimizer_name}] Completed epoch, time={epoch_time:.2f}s, updates={updates}, val_loss={curves[-1]:.4f}")
+        else: print(f"[{optimizer_name}] Completed epoch, time={epoch_time:.2f}s, updates={updates}, val_loss=N/A")
 
         if updates >= max_updates:
             break

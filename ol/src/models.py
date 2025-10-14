@@ -72,8 +72,9 @@ class MLP(BaseMLP):
                 param.requires_grad = False
         trainable_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
         # ensure trainable params stay under 50k limit
+        print(f"Froze last {k} layer(s) with {trainable_params}/{limit} trainable params")
         assert trainable_params <= limit, f"Trainable params ({trainable_params}) exceed RO limit"
-        return self
+        return self, trainable_params
 
 # Example usage within a model context
 if __name__ == "__main__":
@@ -81,5 +82,5 @@ if __name__ == "__main__":
     # create sample model with fixed backbone
     model = MLP(in_dim=10, hidden=[128, 64], out_dim=4)
     # freeze last 2 layers for ro
-    model = model.freeze_all_but_last_k(k=2, limit=50000)
-    print(f"Model frozen with {sum(p.numel() for p in model.parameters() if p.requires_grad)} trainable params.")
+    model, num_params = model.freeze_all_but_last_k(k=2, limit=50000)
+    print(f"Model frozen with {num_params} trainable params.")

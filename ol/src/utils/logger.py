@@ -5,18 +5,20 @@ import datetime
 import psutil
 import sys
 from contextlib import contextmanager
+from typing import Any, Dict, List, Optional
 
 class MLLogger:
-    """A logger for machine learning experiments, tracking performance, system info, and step details."""
+    """a logger for machine learning experiments, tracking performance, system info, and step details."""
 
-    def __init__(self, log_file="logs/experiment_logs.json"):
-        """Initialize logger with file path and system information."""
+    def __init__(self, log_file: str = "logs/experiment_logs.json"):
+        """initialize logger with file path and system information."""
         self.log_file = log_file
-        self.experiment_context = {}
-        self.current_logs = []  # Logs for the current experiment run
+        self.experiment_context: Dict[str, Any] = {}
+        self.current_logs: List[Dict[str, Any]] = []  # logs for the current experiment run
+        self.metrics: Dict[str, Any] = {}  # new: store all metrics for aggregation in summary
         os.makedirs(os.path.dirname(log_file), exist_ok=True)
 
-        # Capture system information
+        # capture system information
         self.experiment_context['system_info'] = {
             'platform': sys.platform,
             'python_version': sys.version.split()[0],
@@ -26,20 +28,20 @@ class MLLogger:
         }
 
     def set_experiment_context(self, **context):
-        """Update experiment context with provided key-value pairs."""
+        """update experiment context with provided key-value pairs."""
         self.experiment_context.update(context)
 
     @contextmanager
     def log_step(self, step_name: str, **initial_info):
-        """Context manager to log a step with performance metrics."""
+        """context manager to log a step with performance metrics."""
         start_time = time.time()
-        start_mem = psutil.Process().memory_info().rss / (1024 ** 2)  # Convert to MB
+        start_mem = psutil.Process().memory_info().rss / (1024 ** 2)  # convert to mb
         step_info = dict(initial_info)
         error_msg = None
         status = "unknown"
 
         try:
-            yield step_info  # Allow updating step_info within the block
+            yield step_info  # allow updating step_info within the block
             status = "success"
         except Exception as e:
             status = "error"
@@ -69,7 +71,7 @@ class MLLogger:
             self._write_log(log_entry)
 
     def _write_log(self, log_entry):
-        """Write a single log entry to the JSON file."""
+        """write a single log entry to the json file."""
         try:
             logs = []
             if os.path.exists(self.log_file):
@@ -79,32 +81,69 @@ class MLLogger:
             with open(self.log_file, 'w', encoding='utf-8') as f:
                 json.dump(logs, f, indent=2, default=str, ensure_ascii=False)
         except Exception:
-            pass  # Silent fail on write issues to avoid interrupting experiment
+            pass  # silent fail on write issues to avoid interrupting experiment
 
-    def log_metric(self, metric_name: str, value: float):
-        """Log a single metric to the current logs."""
+    def log_metric(self, metric_name: str, value: Any):
+        """log a single metric to the current logs and metrics dict."""
         if not self.current_logs:
             self.current_logs.append({"step_info": {}})
         self.current_logs[-1]["step_info"][metric_name] = value
+        self.metrics[metric_name] = value  # new: store for summary aggregation
 
     def log_learning_curve(self, curve_data: dict):
-        """Log learning curve data to the current logs."""
+        """log learning curve data to the current logs."""
         if not self.current_logs:
             self.current_logs.append({"step_info": {}})
         self.current_logs[-1]["step_info"]["learning_curve_points"] = curve_data
 
-    def generate_log_report(self, output_file="logs/experiment_report.txt"):
-        """Generate a detailed report from current logs."""
+    def generate_log_report(self, output_file: str = "logs/experiment_report.txt"):
+        """generate a detailed report from current logs, with analysis summary at top aggregating all data."""
         if not self.current_logs:
             print("No logs available for this run.")
             return
 
         with open(output_file, 'w', encoding='utf-8') as f:
+            # new: analysis summary section at top with aggregated data
+            f.write("=" * 70 + "\n")
+            f.write("ANALYSIS SUMMARY\n")
+            f.write("=" * 70 + "\n\n")
+
+            # detect part based on steps
+            is_part1 = any("RO" in log['step'] for log in self.current_logs)
+            is_part2 = any("Ablation" in log['step'] for log in self.current_logs)
+
+            if is_part1:
+                f.write("Part 1: Randomized Optimization Analysis\n")
+                f.write("-" * 40 + "\n")
+                # aggregate part 1 data from metrics (prefix with algo name)
+                part1_keys = [k for k in self.metrics if any(algo in k for algo in ['rhc', 'sa', 'ga'])]
+                for k in sorted(part1_keys):
+                    v = self.metrics[k]
+                    if isinstance(v, str) and 'table' in k.lower():
+                        f.write(f"{k.replace('_', ' ').title()}:\n{v}\n")
+                    else:
+                        f.write(f"{k.replace('_', ' ').title()}: {v}\n")
+                f.write("\n")
+
+            if is_part2:
+                f.write("Part 2: Adam Ablations Analysis\n")
+                f.write("-" * 40 + "\n")
+                # aggregate part 2 data from metrics (prefix with opt name)
+                part2_keys = [k for k in self.metrics if any(opt in k for opt in ['sgd', 'nesterov', 'adam', 'rmsprop_like'])]
+                for k in sorted(part2_keys):
+                    v = self.metrics[k]
+                    if isinstance(v, str) and 'table' in k.lower():
+                        f.write(f"{k.replace('_', ' ').title()}:\n{v}\n")
+                    else:
+                        f.write(f"{k.replace('_', ' ').title()}: {v}\n")
+                f.write("\n")
+
+            # rest of the original report
             f.write("=" * 70 + "\n")
             f.write("ML EXPERIMENT DETAILED REPORT\n")
             f.write("=" * 70 + "\n\n")
 
-            # Experiment Configuration
+            # experiment configuration
             ctx = self.current_logs[0]["experiment_context"]
             f.write("EXPERIMENT CONFIGURATION\n")
             f.write("-" * 30 + "\n")
@@ -112,31 +151,12 @@ class MLLogger:
             f.write(f"Target Variable: {ctx.get('target', 'Unknown')}\n")
             f.write(f"Learning Model: {ctx.get('model', 'Unknown').upper()}\n")
             f.write(f"Learning Method: {ctx.get('method', 'Unknown').title()}\n")
-            f.write(f"Data Subsample: {ctx.get('subsample', 1.0)} ({ctx.get('subsample', 1.0) * 100:.1f}%)\n")
-            f.write(f"Random Seed: {ctx.get('seed', 'Unknown')}\n")
-            f.write(f"Hyperparameter Tuning: {'Enabled' if ctx.get('tuning', False) else 'Disabled'}\n")
+            f.write(f"Data Subsample: {ctx.get('subsample', 1.0)}\n")
+            f.write(f"Random Seed: {ctx.get('seed', 'N/A')}\n")
+            f.write(f"Hyperparameter Tuning: {ctx.get('tuning', 'Disabled')}\n")
             f.write("\n")
 
-            # Performance Summary
-            step_logs = [log for log in self.current_logs if 'performance' in log]
-            if step_logs:
-                total_time = sum(log['performance']['duration_seconds'] for log in step_logs)
-                total_mem_delta = sum(log['performance']['memory_diff_mb'] for log in step_logs)
-                peak_mem = max(log['performance']['peak_memory_mb'] for log in step_logs)
-                f.write("PERFORMANCE SUMMARY\n")
-                f.write("-" * 30 + "\n")
-                f.write(f"Total Runtime: {total_time:.3f} seconds ({total_time / 60:.2f} minutes)\n")
-                f.write(f"Total Memory Delta: {total_mem_delta:+.1f} MB\n")
-                f.write(f"Peak Memory Usage: {peak_mem:.1f} MB\n")
-                f.write(f"Number of Steps: {len(step_logs)}\n")
-                f.write(f"Average Step Time: {total_time/len(step_logs):.3f} seconds\n")
-                slowest_step = max(step_logs, key=lambda x: x['performance']['duration_seconds'])
-                fastest_step = min(step_logs, key=lambda x: x['performance']['duration_seconds'])
-                f.write(f"Slowest Step: {slowest_step['step']} ({slowest_step['performance']['duration_seconds']:.3f}s)\n")
-                f.write(f"Fastest Step: {fastest_step['step']} ({fastest_step['performance']['duration_seconds']:.3f}s)\n")
-                f.write("\n")
-
-            # Data Analysis
+            # data analysis
             data_log = next((log for log in self.current_logs if log['step'] == 'Load Data' and 'step_info' in log), None)
             if data_log and data_log['step_info']:
                 f.write("DATA ANALYSIS\n")
@@ -156,7 +176,7 @@ class MLLogger:
                         f.write(f"  {class_name}: {count:,} ({count/total*100:.1f}%)\n")
                 f.write("\n")
 
-            # Model Performance Results
+            # model performance results
             eval_log = next((log for log in self.current_logs if log['step'] == 'Evaluate Model' and 'step_info' in log), None)
             if eval_log and eval_log['step_info']:
                 f.write("MODEL PERFORMANCE RESULTS\n")
@@ -169,7 +189,7 @@ class MLLogger:
                     f.write(f"Learning Curve Points: {len(step_info['learning_curve_points'])}\n")
                 f.write("\n")
 
-            # System Information
+            # system information
             sys_info = self.experiment_context.get('system_info', {})
             f.write("SYSTEM INFORMATION\n")
             f.write("-" * 30 + "\n")
@@ -180,7 +200,7 @@ class MLLogger:
             f.write(f"Process ID: {sys_info.get('process_id', 'Unknown')}\n")
             f.write("\n")
 
-            # Detailed Step Analysis
+            # detailed step analysis
             f.write("DETAILED STEP ANALYSIS\n")
             f.write("-" * 30 + "\n")
             for i, log in enumerate(self.current_logs, 1):
@@ -209,7 +229,7 @@ class MLLogger:
                                 f.write(f"     {k.replace('_', ' ').title()}: {v}\n")
                 f.write("\n")
 
-            # Footer
+            # footer
             f.write("=" * 70 + "\n")
             f.write(f"Report Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} EDT\n")
             f.write(f"Log File: {self.log_file}\n")
@@ -217,5 +237,5 @@ class MLLogger:
 
         print(f"Detailed report saved to: {output_file}")
 
-# Global instance
+# global instance
 ml_logger = MLLogger()
