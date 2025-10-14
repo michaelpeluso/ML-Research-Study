@@ -10,218 +10,77 @@ from sklearn.calibration import LinearSVC, calibration_curve
 from sklearn.datasets import make_blobs
 from sklearn.metrics import ConfusionMatrixDisplay, auc, precision_recall_curve, roc_curve
 from sklearn.model_selection import cross_val_score
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union
 
 matplotlib.use('Agg')
 
-def plot_curve(x, y_list, labels=None, xlabel="", ylabel="", title="", save_path=None, marker=None):
+def plot_curve(x: Union[list, Any], y_list: list, labels: Optional[list[str]] = None, xlabel: str = "", ylabel: str = "", title: str = "", save_path: Optional[str] = None, marker: Optional[str] = None, colors: Optional[list[str]] = None, linestyles: Optional[list[str]] = None, xscale: str = 'linear', std: Optional[List[float]] = None, lower: Optional[List[float]] = None, upper: Optional[List[float]] = None, band_label: str = '± Std Dev'):
+    '''
+    plot curve with optional labels, colors, linestyles, xscale, grid, and save.
+    supports stability bands via std (symmetric) or explicit lower/upper (e.g., for iqr).
+    bands applied to first y in y_list only.
+    '''
     plt.figure(figsize=(8,5))
-
-    if any(isinstance(v, str) or v is None for v in x):
-        x_pos = np.arange(len(x))
-        plt.xticks(x_pos, [str(v) for v in x])
-    else:
-        x_pos = x
     
-    for y, lbl in zip(y_list, labels): # type: ignore
-        plt.plot(x_pos, y, label=lbl, marker=marker)
-
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
-    plt.title(title)
-    plt.grid(True)
+    # wrap single curve if flat list of numbers
+    if isinstance(y_list[0], (int, float)) if y_list else False:  # changed: check if first element is scalar
+        y_list = [y_list]  # changed: wrap into list for single curve
     
-    if any(labels): # type: ignore
-        plt.legend()
-    if save_path:
-        plt.savefig(save_path)
-    else:
-        plt.show()
-    plt.close()
-
-
-def plot_model_evaluation(y_test, y_proba, y_pred, metrics, class_names, train_sizes, train_scores, val_scores, scoring, save_path="./", stitched_title="Stitched Models"):
-    if save_path: os.makedirs(save_path, exist_ok=True)
-
-    # Learning curve
-    plot_learning_curve(train_sizes, train_scores, val_scores, scoring, save_path=save_path)
-
-    # Confusion matrix - classification only
-    if "ConfusionMatrix" in metrics and metrics["ConfusionMatrix"] is not None:
-        plot_confusion_matrix(metrics["ConfusionMatrix"], class_names, save_path=save_path)
-
-    # PR/ROC/Calibration curves - classification with proba only
-    if y_proba is not None and len(y_proba.shape) > 1:
-        if y_proba.shape[1] == 2:  # Binary
-            y_test_list = [np.ravel(y_test)]
-            y_proba_list = [y_proba[:, 1]]
-            labels = [f"Class {class_names[1]}"] if class_names else ["Positive Class"]
+    colors = colors or ['blue'] * len(y_list)  # default colors if none
+    linestyles = linestyles or ['-'] * len(y_list)  # default solid lines
+    labels = labels or [""] * len(y_list)  # changed: default to empty string per curve to match length and type
+    
+    # check for per-curve x (list of sequences)
+    if isinstance(x, list) and len(x) == len(y_list) and all(hasattr(xi, '__iter__') and not isinstance(xi, str) for xi in x):  # changed: added check for iterable xi (not scalar)
+        for i, (x_i, y, lbl) in enumerate(zip(x, y_list, labels)):  # per-curve x
+            if any(isinstance(v, str) or v is None for v in x_i):
+                x_pos = np.arange(len(x_i))
+                plt.xticks(x_pos, [str(v) for v in x_i])
+            else:
+                x_pos = x_i
+            plt.plot(x_pos, y, label=lbl, marker=marker, color=colors[i], linestyle=linestyles[i])
+    else:  # single x for all
+        if any(isinstance(v, str) or v is None for v in x):  # type: ignore
+            x_pos = np.arange(len(x))  # type: ignore
+            plt.xticks(x_pos, [str(v) for v in x])  # type: ignore
         else:
-            y_test_list = [np.array(y_test) == cls for cls in class_names]
-            y_proba_list = [y_proba[:, i] for i in range(y_proba.shape[1])]
-            labels = class_names
+            x_pos = x  # type: ignore
+        for i, (y, lbl) in enumerate(zip(y_list, labels)):
+            plt.plot(x_pos, y, label=lbl, marker=marker, color=colors[i], linestyle=linestyles[i])
+        
+    # add stability bands for first y if provided
+    if len(y_list) > 0:
+        y_for_band = np.atleast_1d(np.array(y_list[0], dtype=float))
+        band_color = colors[0] if colors else 'blue'
+        if lower is not None and upper is not None:
+            plt.fill_between(x_pos, lower, upper, color=band_color, alpha=0.2, label=band_label) # type: ignore
+        elif std is not None:
+            # Robust handling: accept scalar/numpy scalar/list/ndarray for std
+            try:
+                std_arr = np.asarray(std, dtype=float)
+            except Exception:
+                std_arr = None
 
-        plot_pr_curves(y_test_list, y_proba_list, labels, save_path=save_path)
-        plot_roc_curves(y_test_list, y_proba_list, labels, save_path=save_path)
-        plot_calibration_curve(y_test_list, y_proba_list, labels, save_path=save_path)
-
-    # Residual - regression only
-    if "r2" in metrics and y_pred is not None: 
-        plot_residuals(y_test, y_pred, save_path=save_path)
-
-    stitch_images(save_path, stitched_title)
-
-
-def plot_confusion_matrix(cm: np.ndarray, class_names, normalize=True, title="Confusion Matrix", save_path=None):
-    if normalize: cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_names)
-    fig, ax = plt.subplots(figsize=(8, 6))
-    disp.plot(cmap="Blues", ax=ax, values_format=".2f" if normalize else "d")
+            if std_arr is None:
+                pass
+            else:
+                # If std_arr is a scalar (0-d), broadcast to length of y_for_band
+                if std_arr.ndim == 0:
+                    std_arr = np.full_like(y_for_band, float(std_arr), dtype=float)
+                # If lengths match, plot the band
+                if std_arr.shape[0] == y_for_band.shape[0]:
+                    lower_calc = y_for_band - std_arr
+                    upper_calc = y_for_band + std_arr
+                    plt.fill_between(x_pos, lower_calc, upper_calc, color=band_color, alpha=0.2, label=band_label) # type: ignore
+    
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel if ylabel else "Loss")
     plt.title(title)
-    if save_path: plt.savefig(f"{save_path}/confusion_matrix.png")
-    else: plt.show()
-    plt.close()
-
-
-def plot_pr_curves(y_true_list, y_proba_list, labels, title="Precision-Recall Curve", save_path=None):
-    plt.figure(figsize=(8, 6))
-    
-    for y_true, y_proba, lbl in zip(y_true_list, y_proba_list, labels):
-        precision, recall, _ = precision_recall_curve(y_true, y_proba)
-        pr_auc = auc(recall, precision)
-        plt.plot(recall, precision, label=f"{lbl} (AUC={pr_auc:.2f})")
-    
-    plt.xlabel("Recall")
-    plt.ylabel("Precision")
-    plt.title(title)
-    plt.grid(True)
-    plt.legend()
-    
-    if save_path: plt.savefig(f"{save_path}/pr_curve.png")
-    else: plt.show()
-    plt.close()
-
-
-def plot_roc_curves(y_true_list, y_proba_list, labels, title="ROC Curve", save_path=None):
-    plt.figure(figsize=(8,6))
-    
-    for y_true, y_proba, lbl in zip(y_true_list, y_proba_list, labels):
-        fpr, tpr, _ = roc_curve(y_true, y_proba)
-        roc_auc_score_value = auc(fpr, tpr)
-        plt.plot(fpr, tpr, label=f"{lbl} (AUC={roc_auc_score_value:.2f})")
-    
-    # Random baseline
-    plt.plot([0,1], [0,1], 'k--', label="Random")
-    plt.xlabel("False Positive Rate")
-    plt.ylabel("True Positive Rate")
-    plt.title(title)
-    plt.grid(True)
-    plt.legend()
-    
-    if save_path: plt.savefig(f"{save_path}/roc_curve.png")
-    else: plt.show()
-    plt.close()
-
-
-def plot_calibration_curve(y_true_list, y_proba_list, class_names, title="Calibration Curve", save_path=None):
-    plt.figure(figsize=(8, 6))
-    for i, (y_true, y_proba, name) in enumerate(zip(y_true_list, y_proba_list, class_names)):
-        prob_true, prob_pred = calibration_curve(y_true, y_proba, n_bins=10)
-        plt.plot(prob_pred, prob_true, label=f"{name}")
-    plt.plot([0, 1], [0, 1], "k--", label="Perfectly calibrated")
-    plt.xlabel("Mean predicted probability")
-    plt.ylabel("Fraction of positives")
-    plt.title(title)
-    plt.legend()
+    plt.xscale(xscale)
     plt.grid(True)
     
-    if save_path: plt.savefig(f"{save_path}/calibration_curve.png")
-    else: plt.show()
-    plt.close()
-
-def plot_feature_importance(feature_importances, n_count=None, title="Decision Tree Feature Importance", save_path=None):
-    print("Plotting decision tree feature importance.")
-    sorted_items = sorted(feature_importances.items(), key=lambda x: x[1], reverse=True)
-    features, importance = zip(*sorted_items)
-    
-    plt.figure(figsize=(8,6))
-    plt.bar(features, importance)
-    plt.xticks(rotation=45, ha="right")
-    plt.ylabel("Importance")
-    plt.title(title + f"(Node Count: {n_count})")
-    plt.tight_layout()
-    if save_path: plt.savefig(save_path)
-    else: plt.show()
-    plt.close()
-
-def plot_epoch_curve(x: List[Union[int, float]], y: List[float], title: str = "RO Curve", save_path: Optional[str] = None, log_x: bool = False, caption: Optional[str] = None, std: Optional[List[float]] = None) -> None:
-    plt.figure(figsize=(8, 6))
-    plt.plot(x, y, label="Mean Loss")
-    plt.xlabel("Evals")  # x label
-    plt.ylabel("Loss")  # y label
-    plt.title(title)  # title
-    plt.grid(True)  # add grid
-    
-    # add stability bands if std provided
-    if std is not None and len(std) == len(y):
-        plt.fill_between(x, [y[i] - std[i] for i in range(len(y))], [y[i] + std[i] for i in range(len(y))], 
-                       color='blue', alpha=0.2, label='± Std Dev')
-
-    if log_x: plt.xscale('log')    
-    if caption: plt.figtext(0.5, 0.01, caption, wrap=True, horizontalalignment='center', fontsize=8)    
-    plt.legend()  
-
-    if save_path: plt.savefig(save_path)
-    else: plt.show()
-    plt.close()
-
-def plot_residuals(y_true, y_pred, title="Residual Plot", save_path=None):
-    residuals = y_true - y_pred
-    plt.figure(figsize=(8, 6))
-    plt.scatter(y_pred, residuals)
-    plt.axhline(0, color='r', linestyle='--')
-    plt.xlabel("Predicted Values")
-    plt.ylabel("Residuals")
-    plt.title(title)
-    plt.grid(True)
-    if save_path: plt.savefig(f"{save_path}/residual_plot.png")
-    else: plt.show()
-    plt.close()
-
-def plot_complexity_curve(complexity_data, scoring='R2', save_path=None):
-    param_name = complexity_data['param_name'].replace('estimator__', '').title()
-    param_values = complexity_data['param_values']
-    train_mean = complexity_data['train_scores_mean']
-    val_mean = complexity_data['val_scores_mean']
-    train_std = complexity_data['train_scores_std']
-    val_std = complexity_data['val_scores_std']
-    
-    # Filter out None or non-numeric values
-    valid_idx = [i for i, v in enumerate(param_values) if v is not None and isinstance(v, (int, float))]
-    if not valid_idx:
-        print("No valid numeric param_values for plotting. Skipping plot.")
-        return
-
-    x_pos = np.array(valid_idx)
-    param_labels = [str(param_values[i]) for i in valid_idx]
-    train_mean = np.array(train_mean)[valid_idx]
-    val_mean = np.array(val_mean)[valid_idx]
-    train_std = np.array(train_std)[valid_idx]
-    val_std = np.array(val_std)[valid_idx]
-    
-    plt.figure(figsize=(8, 6))
-    plt.plot(x_pos, train_mean, 'o-', label=f'Training {scoring}', color='#1f77b4')
-    plt.plot(x_pos, val_mean, 's-', label=f'Validation {scoring}', color='#ff7f0e')
-    plt.fill_between(x_pos, train_mean - train_std, train_mean + train_std, alpha=0.2, color='#1f77b4')
-    plt.fill_between(x_pos, val_mean - val_std, val_mean + val_std, alpha=0.2, color='#ff7f0e')
-
-    plt.xlabel(param_name.replace('_', ' ').title())
-    plt.ylabel(f'{scoring} Score')
-    plt.title("Model Complexity Curve")
-    plt.legend()
-    plt.grid(True, linestyle='--', alpha=0.7)
-    plt.xticks(x_pos, param_labels, rotation=45)
-    
+    if any(lbl is not None for lbl in labels):  # changed: show legend only if any non-None labels
+        plt.legend()
     if save_path:
         plt.savefig(save_path)
     else:
@@ -241,42 +100,6 @@ def plot_learning_curve(train_sizes, train_scores, val_scores, scoring, title="L
         marker="o"
     )
 
-
-def plot_pruning_path(pipeline, X_train, y_train, save_path=None):
-    print('Plotting decision tree pruning path.')
-    alphas = [0.0, 1e-4, 5e-4, 1e-3, 5e-3, 1e-2]
-    scores = []
-    estimator = pipeline.named_steps['estimator']
-    scoring = 'average_precision' if is_classifier(estimator) else 'neg_mean_squared_error'
-    
-    for alpha in alphas:
-        pipeline.set_params(estimator__ccp_alpha=alpha)
-        score = cross_val_score(pipeline, X_train, y_train, cv=5, scoring=scoring, n_jobs=-1).mean()
-        scores.append(score)
-    
-    plt.figure(figsize=(8, 6))
-    plt.plot(alphas, scores, 'o-')
-    plt.xlabel('CCP Alpha (pruning parameter)')
-    plt.ylabel('Cross-Validation Score')
-    plt.title('Decision Tree Pruning Path')
-    plt.xscale('log')
-    plt.grid(True)
-    
-    if save_path: plt.savefig(f"{save_path}/pruning_path.png")
-    else: plt.show()
-    plt.close()
-
-    class_names = [str(c) for c in estimator.classes_] if hasattr(estimator, "classes_") else None
-    plt.figure(figsize=(12, 9))
-    tree.plot_tree(estimator, feature_names=X_train.columns, class_names=class_names, filled=True, fontsize=1)
-    if save_path: plt.savefig(f"{save_path}/decision_tree.png", dpi=600)
-    else: plt.show()
-    plt.close()
-    
-    # Reset to best alpha
-    best_alpha = alphas[np.argmax(scores)]
-    pipeline.set_params(estimator__ccp_alpha=best_alpha)
-    return best_alpha
 
 def stitch_images(img_dir, title=""):
     filename = "_plots_stitched.png"

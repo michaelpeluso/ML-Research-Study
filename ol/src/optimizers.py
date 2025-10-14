@@ -200,9 +200,9 @@ def optimizer_factory(model: torch.nn.Module, kind: str, lr: float = 1e-3, **kwa
     
     elif kind in ['adam', 'adam_no_bias', 'rmsprop_like', 'adamw']:
         # extract adam-specific kwargs with types
-        betas = kwargs.get('betas', (0.9, 0.999) if kind != 'rmsprop_like' else (0.0, 0.999))
+        betas = (0.9, 0.999) if kind != 'rmsprop_like' else (0.0, 0.999)
         if not isinstance(betas, tuple) or len(betas) != 2 or not all(isinstance(b, float) for b in betas):
-            raise ValueError("betas must be tuple of two floats")
+            raise ValueError(f"betas must be tuple of two floats, got {betas}")
         eps = float(kwargs.get('eps', 1e-8)) # type: ignore
         weight_decay = float(kwargs.get('weight_decay', 0.0)) # type: ignore
         amsgrad = bool(kwargs.get('amsgrad', False))

@@ -79,9 +79,8 @@ def load_or_process_data(dataset: str, target: str, method: str, subsample: floa
     return X_train, X_val, X_test, y_train, y_val, y_test, info
 
 
-def wrap_into_loaders(method, X_train, X_val, X_test, y_train, y_val, y_test) -> tuple[DataLoader, DataLoader, DataLoader]:
+def wrap_into_loaders(method, X_train, X_val, X_test, y_train, y_val, y_test, batch_size) -> tuple[DataLoader, DataLoader, DataLoader]:
     # https://edstem.org/us/courses/81923/discussion/6999408
-    # X_train, y_train, X_val, y_val, X_test, y_test are numpy arrays after your SAME preprocessing.
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     y_dtype = torch.float if 'regression' in method.lower() else torch.long
     
@@ -93,9 +92,9 @@ def wrap_into_loaders(method, X_train, X_val, X_test, y_train, y_val, y_test) ->
     y_val_tensor = torch.tensor(y_val.values if hasattr(y_val, 'values') else y_val, dtype=y_dtype, device=device)
     y_test_tensor = torch.tensor(y_test.values if hasattr(y_test, 'values') else y_test, dtype=y_dtype, device=device)
 
-    train_loader = DataLoader(TensorDataset(X_train_tensor, y_train_tensor), batch_size=256, shuffle=True, drop_last=False)
-    val_loader = DataLoader(TensorDataset(X_val_tensor, y_val_tensor), batch_size=1024, shuffle=False)
-    test_loader = DataLoader(TensorDataset(X_test_tensor, y_test_tensor), batch_size=1024, shuffle=False)
+    train_loader = DataLoader(TensorDataset(X_train_tensor, y_train_tensor), batch_size=batch_size, shuffle=True, drop_last=False)
+    val_loader = DataLoader(TensorDataset(X_val_tensor, y_val_tensor), batch_size=batch_size, shuffle=False)
+    test_loader = DataLoader(TensorDataset(X_test_tensor, y_test_tensor), batch_size=batch_size, shuffle=False)
 
     return train_loader, val_loader, test_loader
 

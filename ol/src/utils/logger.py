@@ -16,6 +16,7 @@ class MLLogger:
         self.experiment_context: Dict[str, Any] = {}
         self.current_logs: List[Dict[str, Any]] = []  # logs for the current experiment run
         self.metrics: Dict[str, Any] = {}  # new: store all metrics for aggregation in summary
+        self.log_interval = 100
         os.makedirs(os.path.dirname(log_file), exist_ok=True)
 
         # capture system information
@@ -96,65 +97,82 @@ class MLLogger:
             self.current_logs.append({"step_info": {}})
         self.current_logs[-1]["step_info"]["learning_curve_points"] = curve_data
 
-    def generate_log_report(self, output_file: str = "logs/experiment_report.txt"):
+    def generate_log_report(self, output_file: str = "logs/experiment_report.txt", part:int=0):
         """generate a detailed report from current logs, with analysis summary at top aggregating all data."""
         if not self.current_logs:
             print("No logs available for this run.")
             return
 
         with open(output_file, 'w', encoding='utf-8') as f:
-            # new: analysis summary section at top with aggregated data
-            f.write("=" * 70 + "\n")
-            f.write("ANALYSIS SUMMARY\n")
-            f.write("=" * 70 + "\n\n")
-
-            # detect part based on steps
-            is_part1 = any("RO" in log['step'] for log in self.current_logs)
-            is_part2 = any("Ablation" in log['step'] for log in self.current_logs)
-
-            if is_part1:
-                f.write("Part 1: Randomized Optimization Analysis\n")
-                f.write("-" * 40 + "\n")
-                # aggregate part 1 data from metrics (prefix with algo name)
-                part1_keys = [k for k in self.metrics if any(algo in k for algo in ['rhc', 'sa', 'ga'])]
-                for k in sorted(part1_keys):
-                    v = self.metrics[k]
-                    if isinstance(v, str) and 'table' in k.lower():
-                        f.write(f"{k.replace('_', ' ').title()}:\n{v}\n")
-                    else:
-                        f.write(f"{k.replace('_', ' ').title()}: {v}\n")
-                f.write("\n")
-
-            if is_part2:
-                f.write("Part 2: Adam Ablations Analysis\n")
-                f.write("-" * 40 + "\n")
-                # aggregate part 2 data from metrics (prefix with opt name)
-                part2_keys = [k for k in self.metrics if any(opt in k for opt in ['sgd', 'nesterov', 'adam', 'rmsprop_like'])]
-                for k in sorted(part2_keys):
-                    v = self.metrics[k]
-                    if isinstance(v, str) and 'table' in k.lower():
-                        f.write(f"{k.replace('_', ' ').title()}:\n{v}\n")
-                    else:
-                        f.write(f"{k.replace('_', ' ').title()}: {v}\n")
-                f.write("\n")
-
-            # rest of the original report
             f.write("=" * 70 + "\n")
             f.write("ML EXPERIMENT DETAILED REPORT\n")
             f.write("=" * 70 + "\n\n")
 
-            # experiment configuration
-            ctx = self.current_logs[0]["experiment_context"]
-            f.write("EXPERIMENT CONFIGURATION\n")
-            f.write("-" * 30 + "\n")
-            f.write(f"Dataset: {ctx.get('dataset', 'Unknown')}\n")
-            f.write(f"Target Variable: {ctx.get('target', 'Unknown')}\n")
-            f.write(f"Learning Model: {ctx.get('model', 'Unknown').upper()}\n")
-            f.write(f"Learning Method: {ctx.get('method', 'Unknown').title()}\n")
-            f.write(f"Data Subsample: {ctx.get('subsample', 1.0)}\n")
-            f.write(f"Random Seed: {ctx.get('seed', 'N/A')}\n")
-            f.write(f"Hyperparameter Tuning: {ctx.get('tuning', 'Disabled')}\n")
+            # Summary for Part 1
+            if part == 1:
+                f.write("RO ALGORITHMS SUMMARY TABLE\n")
+                f.write("-" * 40 + "\n")
+                ro_data = []
+                for log in self.current_logs:
+                    if log['step'] in ["Randomized Hill Climbing", "Simulated Annealing", "Genetic Algorithm"]:
+                        info = log['step_info']
+                        algo = log['step']
+                        best_loss = info.get('best_loss', 'N/A')
+                        evals = info.get('evals', 'N/A')
+                        wall_time = info.get('wall_clock_time', 'N/A')
+                        ro_data.append((algo, best_loss, evals, wall_time))
+
+                if ro_data:
+                    # Calculate dynamic column widths
+                    max_algo = max(len(algo) for algo, _, _, _ in ro_data)
+                    max_loss = max(len(f"{loss:.4f}" if isinstance(loss, (int, float)) else str(loss)) for _, loss, _, _ in ro_data)
+                    max_evals = max(len(str(evals)) for _, _, evals, _ in ro_data)
+                    max_time = max(len(f"{time:.2f}s" if isinstance(time, (int, float)) else str(time)) for _, _, _, time in ro_data)
+
+                    table_str = f"| {'Algorithm':<{max_algo}} | {'Best Val Loss':>{max_loss}} | {'# Func Evals':>{max_evals}} | {'Wall Time':>{max_time}} |\n"
+                    table_str += f"|{'-' * (max_algo + 2)}|{'-' * (max_loss + 2)}|{'-' * (max_evals + 2)}|{'-' * (max_time + 2)}|\n"
+                    for algo, loss, evals, time in ro_data:
+                        loss_str = f"{loss:.4f}" if isinstance(loss, (int, float)) else str(loss)
+                        time_str = f"{time:.2f}s" if isinstance(time, (int, float)) else str(time)
+                        table_str += f"| {algo:<{max_algo}} | {loss_str:>{max_loss}} | {evals:>{max_evals}} | {time_str:>{max_time}} |\n"
+                    f.write(table_str + "\n\n")
+                else:
+                    f.write("No RO data available.\n\n")
+
+            # Optimizer Ablations Summary for Part 2
+            if part == 2:
+                f.write("OPTIMIZER ABLATIONS SUMMARY TABLE\n")
+                f.write("-" * 40 + "\n")
+                table_str = self.metrics.get('part2_table', 'No table available')
+                f.write(table_str + "\n\n")
+
+            # Key Metrics
+            f.write("KEY METRICS\n")
+            f.write("-" * 40 + "\n")
+            key_metrics = {k: v for k, v in self.metrics.items() if any(sub in k for sub in ['best_loss', 'avg_steps_to_l', 'avg_test_loss', 'test_metric'])}
+            for k, v in key_metrics.items():
+                f.write(f"{k.replace('_', ' ').title()}: {v}\n")
             f.write("\n")
+
+            # system information
+            sys_info = self.experiment_context.get('system_info', {})
+            f.write("SYSTEM INFORMATION\n")
+            f.write("-" * 30 + "\n")
+            f.write(f"Platform: {sys_info.get('platform', 'Unknown')}\n")
+            f.write(f"Python Version: {sys_info.get('python_version', 'Unknown')}\n")
+            f.write(f"CPU Cores: {sys_info.get('cpu_count', 'Unknown')}\n")
+            f.write(f"Total Memory: {sys_info.get('memory_total_gb', 0):.2f} GB\n")
+            f.write(f"Process ID: {sys_info.get('process_id', 'Unknown')}\n")
+            f.write("\n")
+
+            # experiment snapshot
+            f.write("EXPERIMENT CONFIGURATION\n")
+            f.write("-" * 40 + "\n")
+            ctx = self.experiment_context
+            f.write(f"Dataset: {ctx.get('dataset', 'N/A')}\n")
+            f.write(f"Target: {ctx.get('target', 'N/A')}\n")
+            f.write(f"Method: {ctx.get('method', 'N/A')}\n")
+            f.write(f"Subsample: {ctx.get('subsample', 'N/A')}\n")
 
             # data analysis
             data_log = next((log for log in self.current_logs if log['step'] == 'Load Data' and 'step_info' in log), None)
@@ -169,36 +187,13 @@ class MLLogger:
                 f.write(f"Test Set: {step_info.get('test_shape', '0 x 0')}\n")
                 f.write(f"Memory Before Cleaning: {step_info.get('memory_before_clean', 'N/A')}\n")
                 f.write(f"Memory After Cleaning: {step_info.get('memory_after_clean', 'N/A')}\n")
+                f.write(f"Memory Reduction: {step_info.get('memory_reduction', 'N/A')}\n")  # changed: added to detailed
                 if step_info.get('target_distribution'):
                     f.write("Target Distribution:\n")
                     total = sum(step_info['target_distribution'].values())
                     for class_name, count in step_info['target_distribution'].items():
                         f.write(f"  {class_name}: {count:,} ({count/total*100:.1f}%)\n")
                 f.write("\n")
-
-            # model performance results
-            eval_log = next((log for log in self.current_logs if log['step'] == 'Evaluate Model' and 'step_info' in log), None)
-            if eval_log and eval_log['step_info']:
-                f.write("MODEL PERFORMANCE RESULTS\n")
-                f.write("-" * 30 + "\n")
-                step_info = eval_log['step_info']
-                f.write("Test Set Performance:\n")
-                for metric, value in step_info.get('test_metrics', {}).items():
-                    f.write(f"  {metric.replace('_', ' ').title()}: {value:.4f}\n")
-                if 'learning_curve_points' in step_info:
-                    f.write(f"Learning Curve Points: {len(step_info['learning_curve_points'])}\n")
-                f.write("\n")
-
-            # system information
-            sys_info = self.experiment_context.get('system_info', {})
-            f.write("SYSTEM INFORMATION\n")
-            f.write("-" * 30 + "\n")
-            f.write(f"Platform: {sys_info.get('platform', 'Unknown')}\n")
-            f.write(f"Python Version: {sys_info.get('python_version', 'Unknown')}\n")
-            f.write(f"CPU Cores: {sys_info.get('cpu_count', 'Unknown')}\n")
-            f.write(f"Total Memory: {sys_info.get('memory_total_gb', 0):.2f} GB\n")
-            f.write(f"Process ID: {sys_info.get('process_id', 'Unknown')}\n")
-            f.write("\n")
 
             # detailed step analysis
             f.write("DETAILED STEP ANALYSIS\n")
@@ -217,7 +212,9 @@ class MLLogger:
                     f.write("   Step Details:\n")
                     for k, v in log['step_info'].items():
                         if v is not None:
-                            if isinstance(v, (int, float)):
+                            if isinstance(v, (int)):
+                                f.write(f"     {k.replace('_', ' ').title()}: {v}\n")
+                            if isinstance(v, (float)):
                                 f.write(f"     {k.replace('_', ' ').title()}: {v:,.4f}\n")
                             elif isinstance(v, dict):
                                 f.write(f"     {k.replace('_', ' ').title()}:\n")
