@@ -4,7 +4,7 @@ from src.experiment import Experiment
 
 def main():
 
-    subsample=0.1 # L2 testing
+    subsample=False # L2 testing
     seeds=[42, 4242, 424242]
 
     # ------------------
@@ -32,15 +32,15 @@ def main():
         os.makedirs(hotels_exp.save_path, exist_ok=True)
         
         hotels_exp.run_part1_ro(
-            max_param=500, 
-            max_evals=100, 
+            max_param=50000, 
+            max_evals=10000, 
            plateau_threshold=250
         )
         hotels_exp.run_part2_ablations(
-            max_updates=1000, 
+            max_updates=10000, 
             learning_threshold=0.5, 
             learning_rate=0.01, 
-            seeds=[1]
+            seeds=seeds
             )
 
     # ------------------
