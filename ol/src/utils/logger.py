@@ -10,13 +10,14 @@ from typing import Any, Dict, List, Optional
 class MLLogger:
     """a logger for machine learning experiments, tracking performance, system info, and step details."""
 
-    def __init__(self, log_file: str = "logs/experiment_logs.json"):
+    def __init__(self, log_file: str = ""):
         """initialize logger with file path and system information."""
-        self.log_file = log_file
+        self.log_file = log_file or os.path.join(os.environ['ROOT'], "logs")
         self.experiment_context: Dict[str, Any] = {}
         self.current_logs: List[Dict[str, Any]] = []  # logs for the current experiment run
-        self.metrics: Dict[str, Any] = {}  # new: store all metrics for aggregation in summary
+        self.metrics: Dict[str, Any] = {}
         self.log_interval = 100
+        if not log_file: log_file = os.path.join(os.environ['ROOT'], "logs", "experiment_logs.json")
         os.makedirs(os.path.dirname(log_file), exist_ok=True)
 
         # capture system information
@@ -97,8 +98,12 @@ class MLLogger:
             self.current_logs.append({"step_info": {}})
         self.current_logs[-1]["step_info"]["learning_curve_points"] = curve_data
 
-    def generate_log_report(self, output_file: str = "logs/experiment_report.txt", part:int=0):
+    def generate_log_report(self, output_file, part:int=0):
         """generate a detailed report from current logs, with analysis summary at top aggregating all data."""
+        if not output_file:
+            output_file = os.path.join(os.environ['ROOT'], "logs/experiment_report.txt")
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+        
         if not self.current_logs:
             print("No logs available for this run.")
             return

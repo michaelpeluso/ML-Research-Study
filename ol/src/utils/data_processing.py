@@ -12,8 +12,13 @@ import torch
 from torch.utils.data import TensorDataset, DataLoader
 
 # load data from cache if available
-def load_or_process_data(dataset: str, target: str, method: str, subsample: float, seed: int, cache_dir="cache", test_size=0.2, val_size=0.2
+def load_or_process_data(dataset: str, target: str, method: str, subsample: float, seed: int, cache_dir="", test_size=0.2, val_size=0.2
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, pd.Series, dict]:
+    if not cache_dir:
+        cache_dir = os.path.join(os.environ['ROOT'], "cache")
+    hotels_path = os.path.join(os.environ['ROOT'], f"data/hotel_bookings.csv")
+    accidents_path = os.path.join(os.environ['ROOT'], f"data/US_Accidents_March23_1M_rows.csv")
+
     print(f"Loading {dataset} data.")
     os.makedirs(cache_dir, exist_ok=True)
     cache_file = os.path.join(cache_dir, f"{dataset}_subsample_{int(subsample*100)}.pkl")
@@ -31,7 +36,7 @@ def load_or_process_data(dataset: str, target: str, method: str, subsample: floa
     else:
         # load raw data
         df = pd.DataFrame()
-        df = pd.read_csv("data/hotel_bookings.csv" if dataset == "hotels" else "data/US_Accidents_March23_1M_rows.csv")
+        df = pd.read_csv(hotels_path if dataset == "hotels" else accidents_path)
         if len(df) == 0:
             raise ValueError(f"Dataset {dataset} is empty or not found.")
         
@@ -193,8 +198,6 @@ def clean_hotels(df):
     return df
 
 def clean_accidents(df) :
-    df = pd.read_csv("data/US_Accidents_March23_1M_rows.csv")
-
     df['Zipcode'] = df['Zipcode'].astype(str).str[:5] # truncate to 5 digits
     
     # derive times
