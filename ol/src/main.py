@@ -11,7 +11,7 @@ from experiment import Experiment
 def main():
 
     # L2 testing
-    testing = True
+    testing = False
     subsample = 0.1 if testing else None
     seeds = [42] if testing else [42, 4242, 424242]
     max_evals = 500 if testing else 10000
@@ -57,11 +57,11 @@ def main():
             exp.save_path = os.path.join(os.environ['ROOT'], f"figures/{exp.dataset}/{backbone['name']}")
             os.makedirs(exp.save_path, exist_ok=True)
             
-            #exp.run_random_optimization(
-            #    max_param=50000, 
-            #    max_evals=max_evals, 
-            #    plateau_threshold=250
-            #)
+            exp.run_random_optimization(
+                max_param=50000, 
+                max_evals=max_evals, 
+                plateau_threshold=250
+            )
             exp.run_ablations(
                 max_updates=max_evals, 
                 learning_threshold=0.5, 
