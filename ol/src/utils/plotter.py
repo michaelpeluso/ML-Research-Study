@@ -154,19 +154,72 @@ def plot_combined_heatmap(
     create a single heatmap combining alphas (rows), betas (columns segmented by optimizer).
     flattens beta1 and beta2 into one axis with optimizer-prefixed labels.
     '''
-    # flatten betas and create combined x labels with optimizer names
-    combined_beta = []
+    # Build combined x labels and collect per-optimizer data blocks.
     x_labels = []
+    per_opt_blocks = []
+
     for opt in optimizers:
-        for b in beta1_grid:
-            combined_beta.append(b)  # add beta1 for opt
-            x_labels.append(f"{opt} β1={b:.3f}")
-        for b in beta2_grid:
-            combined_beta.append(b)  # add beta2 for opt
-            x_labels.append(f"{opt} β2={b:.3f}")
+        # prefer direct key if present
+        direct = data_dict.get(opt)
+        if direct is not None:
+            block = np.asarray(direct, dtype=float)
+            # assume block shape matches (len(alpha_grid), Ncols)
+            per_opt_blocks.append(block)
+            # create generic labels for these columns
+            for col_idx in range(block.shape[1]):
+                x_labels.append(f"{opt} col{col_idx}")
+            continue
+
+        # otherwise look for suffixed keys produced by ablation analysis
+        b1_key = f"{opt}_alpha_b1"
+        b2_key = f"{opt}_alpha_b2"
+        b1 = data_dict.get(b1_key)
+        b2 = data_dict.get(b2_key)
+
+        blocks = []
+        # beta1 block (may be missing for rmsprop_like)
+        if b1 is not None:
+            b1_arr = np.asarray(b1, dtype=float)
+            blocks.append(b1_arr)
+            for b in beta1_grid:
+                x_labels.append(f"{opt} β1={b:.3f}")
+
+        # beta2 block
+        if b2 is not None:
+            b2_arr = np.asarray(b2, dtype=float)
+            blocks.append(b2_arr)
+            for b in beta2_grid:
+                x_labels.append(f"{opt} β2={b:.3f}")
+
+        if blocks:
+            # horizontally concatenate available blocks for this optimizer
+            try:
+                block = np.hstack(blocks)
+            except Exception:
+                # if shapes don't align, try padding/trimming to alpha_grid length
+                aligned = []
+                for bb in blocks:
+                    bb_arr = np.asarray(bb, dtype=float)
+                    if bb_arr.shape[0] != len(alpha_grid):
+                        # try to reshape or broadcast
+                        try:
+                            bb_arr = np.tile(bb_arr.reshape(-1, bb_arr.shape[1]) if bb_arr.ndim == 2 else bb_arr.reshape(-1, 1), (len(alpha_grid), 1))
+                        except Exception:
+                            # last resort: create zeros
+                            bb_arr = np.zeros((len(alpha_grid), bb_arr.shape[1] if bb_arr.ndim == 2 else 1))
+                    aligned.append(bb_arr)
+                block = np.hstack(aligned)
+            per_opt_blocks.append(block)
+        else:
+            # no data for this optimizer; skip but keep a placeholder label group
+            # (we won't add any columns for this optimizer)
+            continue
+
+    if not per_opt_blocks:
+        raise ValueError("No optimizer data found in data_dict for provided optimizers.")
 
     # combine data arrays horizontally (columns for betas per optimizer)
-    combined_data = np.hstack([data_dict[opt] for opt in optimizers])  # assume data_dict[opt] is (len(alpha_grid), len(beta1_grid) + len(beta2_grid))
+    combined_data = np.hstack(per_opt_blocks)
 
     # plot the combined heatmap
     fig, ax = plt.subplots(figsize=(12, 6))
