@@ -10,7 +10,7 @@ from sklearn.calibration import LinearSVC, calibration_curve
 from sklearn.datasets import make_blobs
 from sklearn.metrics import ConfusionMatrixDisplay, auc, precision_recall_curve, roc_curve
 from sklearn.model_selection import cross_val_score
-from typing import Any, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 matplotlib.use('Agg')
 
@@ -137,4 +137,48 @@ def plot_heatmaps(data, labels, x_labels, title, save_path):
     sns.heatmap(data, xticklabels=x_labels, yticklabels=labels, cmap='viridis')
     plt.title(title)
     plt.savefig(save_path)
+    plt.close()
+
+
+def plot_combined_heatmap(
+    data_dict: Dict[str, np.ndarray],
+    alpha_grid: List[float],
+    beta1_grid: List[float],
+    beta2_grid: List[float],
+    optimizers: List[str],
+    title: str = "",
+    save_path: Optional[str] = None,
+    cmap: str = 'viridis'
+):
+    '''
+    create a single heatmap combining alphas (rows), betas (columns segmented by optimizer).
+    flattens beta1 and beta2 into one axis with optimizer-prefixed labels.
+    '''
+    # flatten betas and create combined x labels with optimizer names
+    combined_beta = []
+    x_labels = []
+    for opt in optimizers:
+        for b in beta1_grid:
+            combined_beta.append(b)  # add beta1 for opt
+            x_labels.append(f"{opt} β1={b:.3f}")
+        for b in beta2_grid:
+            combined_beta.append(b)  # add beta2 for opt
+            x_labels.append(f"{opt} β2={b:.3f}")
+
+    # combine data arrays horizontally (columns for betas per optimizer)
+    combined_data = np.hstack([data_dict[opt] for opt in optimizers])  # assume data_dict[opt] is (len(alpha_grid), len(beta1_grid) + len(beta2_grid))
+
+    # plot the combined heatmap
+    fig, ax = plt.subplots(figsize=(12, 6))
+    sns.heatmap(combined_data, ax=ax, xticklabels=x_labels, yticklabels=[f"{a:.0e}" for a in alpha_grid], cmap=cmap, annot=False, fmt=".2f")
+    ax.set_xlabel("Betas by Optimizer")
+    ax.set_ylabel("Alphas")
+    ax.set_title(title)
+    plt.xticks(rotation=45, ha='right')  # rotate labels for readability
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path)
+    else:
+        plt.show()
     plt.close()

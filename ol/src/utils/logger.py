@@ -178,6 +178,7 @@ class MLLogger:
             f.write(f"Target: {ctx.get('target', 'N/A')}\n")
             f.write(f"Method: {ctx.get('method', 'N/A')}\n")
             f.write(f"Subsample: {ctx.get('subsample', 'N/A')}\n")
+            f.write("\n")
 
             # data analysis
             data_log = next((log for log in self.current_logs if log['step'] == 'Load Data' and 'step_info' in log), None)

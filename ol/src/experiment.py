@@ -22,9 +22,8 @@ warnings.filterwarnings("ignore", category=UserWarning, module="sklearn.neural_n
 print(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
 
 class Experiment:
-    def __init__(self, id: int, dataset: str, target: str, method: str, subsample: float, batch_size: int, best_params: Dict[str, Any]|None=None):
+    def __init__(self, dataset: str, target: str, method: str, subsample: float, batch_size: int, best_params: Dict[str, Any]|None=None):
         """Initialize experiment with dataset config and setup logging/system info."""
-        self.experiment_id = id
         self.dataset = dataset
         self.target = target
         self.method = method

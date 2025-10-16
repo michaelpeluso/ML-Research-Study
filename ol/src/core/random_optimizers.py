@@ -167,90 +167,64 @@ Design: temperature schedule with cooling, accepts worse solutions probabilistic
 Budget: stops at max_evals func evals.
 Returns: optimized model, history [(evals, loss)] for analysis.
 """
-'''
-simulated annealing for random optimization.
-design: probabilistic search accepting worse solutions based on a temperature schedule.
-budget: stops at max_evals func evals.
-returns: optimized model, history [(evals, loss)] for analysis.
-optional: uniform plateau rule for early stopping if improvement < min_delta.
-'''
 def sa(
         model: nn.Module,
         val_loader: torch.utils.data.DataLoader,
         loss_fn: Callable,
         device: torch.device,
         max_evals: int = 10000,
-        initial_temp: float = 10.0,  # increased to handle typical nn loss deltas
-        decay_rate: float = 0.995,
+        initial_temp: float = 1.0,
+        min_temp: float = 0.001,
+        cooling_rate: float = 0.003,
         initial_perturb_scale: float = 0.1,
         plateau_threshold: int = 1000,
         min_delta: float = 1e-6,
-        log_interval: int = 50,
         val_subset_batches: int | None = None,
         logger: MLLogger | None = None
     ) -> Tuple[nn.Module, List[Tuple[int, float]]]:
-
     print(f"[SA] Starting with {sum(p.numel() for p in model.parameters())} parameters, max_evals={max_evals}")
     if logger is None: logger = MLLogger()
     start_time = time.perf_counter()
-    last_improvement_eval = 1  # plateau tracking
     best_flat = get_trainable_params(model)
     best_loss = validation_objective(best_flat, model, val_loader, loss_fn, device, val_subset_batches)
-    history = [(1, best_loss)]  # initial eval
+    history = [(1, best_loss)]
     evals = 1
-    current_flat = best_flat.clone()
-    current_loss = best_loss
     temp = initial_temp
-    perturb_scale = initial_perturb_scale
-    initial_perturb_scale = perturb_scale 
 
     with logger.log_step("Simulated Annealing") as step_info:
         step_info.update({
             'parameters': sum(p.numel() for p in model.parameters() if p.requires_grad),
             'max_evals': max_evals,
             'initial_temp': initial_temp,
-            'decay_rate': decay_rate,
-            'initial_perturb_scale': initial_perturb_scale,
+            'min_temp': min_temp,
+            'cooling_rate': cooling_rate,
             'plateau_threshold': plateau_threshold,
             'min_delta': min_delta,
-            'initial_loss': best_loss  # log initial loss
+            'initial_loss': best_loss
         })
 
-        while evals < max_evals:
-            # generate neighbor with gaussian perturbation
-            perturb = torch.randn_like(current_flat, device=device) * perturb_scale
-            new_flat = current_flat + perturb
-            new_loss = validation_objective(new_flat, model, val_loader, loss_fn, device, val_subset_batches)
+        last_improvement_eval = 1
+        while evals < max_evals and temp > min_temp:
+            current_flat = best_flat + torch.randn_like(best_flat, device=device) * initial_perturb_scale
+            current_loss = validation_objective(current_flat, model, val_loader, loss_fn, device, val_subset_batches)
+            improvement = best_loss - current_loss
+            import math
+            if improvement > 0 or torch.rand(1, device=device).item() < math.exp(improvement / temp):
+                best_flat = current_flat.clone()
+                best_loss = current_loss
+                last_improvement_eval = evals
             evals += 1
-            delta = new_loss - current_loss
-
-            # accept if better or probabilistically if worse
-            if delta < 0 or torch.rand(1, device=device).item() < torch.exp(torch.tensor(-delta / temp)).item():
-                current_flat = new_flat.clone()
-                current_loss = new_loss
-                improvement = best_loss - current_loss
-                if improvement > min_delta:
-                    last_improvement_eval = evals
-                    best_flat = current_flat.clone()
-                    best_loss = current_loss
-
-            # decay temperature
-            temp *= decay_rate
-            perturb_scale = initial_perturb_scale * (temp / initial_temp)
+            history.append((evals, current_loss))
+            temp *= (1 - cooling_rate)
 
             if evals - last_improvement_eval > plateau_threshold:
                 print(f"[SA] Stopping early at eval {evals} due to plateau")
                 break
 
-            if evals % log_interval == 0:
-                history.append((evals, current_loss))
-                print(f"[SA] Eval {evals}/{max_evals}: current_loss={current_loss:.6f}, best_loss={best_loss:.6f}")
-
-        # set best params back to model
         set_trainable_params(model, best_flat)
         elapsed = time.perf_counter() - start_time
         print(f"[SA] Completed: total_evals={evals}, final_best_loss={best_loss:.6f}, elapsed={elapsed:.3f}s")
-
+        
         step_info.update({
             'best_loss': best_loss,
             'evals': evals,
@@ -274,7 +248,7 @@ def ga(
         max_evals: int = 10000,
         pop_size: int = 50,
         mutation_rate: float = 0.1,
-        mutation_std: float = 0.001,
+        mutation_std: float = 0.01,
         crossover_rate: float = 0.7,
         plateau_threshold: int = 1000,
         min_delta: float = 1e-6,

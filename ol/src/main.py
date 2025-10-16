@@ -11,84 +11,63 @@ from experiment import Experiment
 def main():
 
     # L2 testing
-    testing = False
-    subsample=0.1 if testing else None
-    seeds=[42] if testing else [42, 4242, 424242]
-    max_evals=500 if testing else 10000
-    
-    # ------------------
-    # Hotels (~120k × 32)
-    # ------------------
-    hotels_exp = Experiment(
-        id=5,
-        dataset="hotels",
-        target="is_canceled",
-        method="classification",
-        subsample=subsample or 1.0,
-        batch_size=64
-    )
+    testing = True
+    subsample = 0.1 if testing else None
+    seeds = [42] if testing else [42, 4242, 424242]
+    max_evals = 500 if testing else 10000
 
-    backbone_configs = [
-        {'name': 'nn_2', 'max_iter': 15, 'learning_rate_init': 0.05, 'hidden_layer_sizes': (256, 128), 'alpha': 1e-05, 'activation': 'tanh'},  # shallow: 2 layers
-        {'name': 'nn_4', 'max_iter': 15, 'learning_rate_init': 0.05, 'hidden_layer_sizes': (256, 256, 128, 128), 'alpha': 1e-05, 'activation': 'tanh'}  # deep: 4 layers
+    experiments = [
+        {
+            'dataset': "hotels",
+            'target': "is_canceled",
+            'method': "classification",
+            'subsample': subsample or 1.0,
+            'batch_size': 64,
+            'backbone_configs': [
+                {'name': 'nn_2', 'max_iter': 15, 'learning_rate_init': 0.05, 'hidden_layer_sizes': (256, 128), 'alpha': 1e-05, 'activation': 'tanh'},  # shallow: 2 layers
+                {'name': 'nn_4', 'max_iter': 15, 'learning_rate_init': 0.05, 'hidden_layer_sizes': (256, 256, 128, 128), 'alpha': 1e-05, 'activation': 'tanh'}  # deep: 4 layers
+            ]
+        },
+        {
+            'dataset': "accidents",
+            'target': "Duration_Seconds",
+            'method': "regression",
+            'subsample': subsample or 0.8,  # > 80%
+            'batch_size': 1024,
+            'backbone_configs': [
+                {'name': 'nn_2', 'max_iter': 5, 'learning_rate_init': 0.01, 'hidden_layer_sizes': (256, 128), 'alpha': 0.001, 'activation': 'relu'},  # shallow: 2 layers
+                {'name': 'nn_4', 'max_iter': 5, 'learning_rate_init': 0.01, 'hidden_layer_sizes': (256, 256, 128, 128), 'alpha': 0.001, 'activation': 'relu'}  # deep: 4 layers
+            ]
+        }
     ]
 
-    for config in backbone_configs:
-        hotels_exp.best_params.update(config)
-        hotels_exp.update_logs()
-        hotels_exp.ml_logger.current_logs = []
-        hotels_exp.save_path = os.path.join(os.environ['ROOT'], f"figures/{hotels_exp.dataset}/{config['name']}")
-        os.makedirs(hotels_exp.save_path, exist_ok=True)
-        
-        hotels_exp.run_random_optimization(
-            max_param=50000, 
-            max_evals=max_evals, 
-           plateau_threshold=250
+    for exp_config in experiments:
+        exp = Experiment(
+            dataset=exp_config['dataset'],
+            target=exp_config['target'],
+            method=exp_config['method'],
+            subsample=exp_config['subsample'],
+            batch_size=exp_config['batch_size']
         )
-        hotels_exp.run_ablations(
-            max_updates=max_evals, 
-            learning_threshold=0.5, 
-            learning_rate=0.01, 
-            seeds=seeds
+
+        for backbone in exp_config['backbone_configs']:
+            exp.best_params.update(backbone)
+            exp.update_logs()
+            exp.ml_logger.current_logs = []
+            exp.save_path = os.path.join(os.environ['ROOT'], f"figures/{exp.dataset}/{backbone['name']}")
+            os.makedirs(exp.save_path, exist_ok=True)
+            
+            #exp.run_random_optimization(
+            #    max_param=50000, 
+            #    max_evals=max_evals, 
+            #    plateau_threshold=250
+            #)
+            exp.run_ablations(
+                max_updates=max_evals, 
+                learning_threshold=0.5, 
+                learning_rate=backbone['learning_rate_init'], 
+                seeds=seeds
             )
-
-    # ------------------
-    # US Accidents (~8M × 46)
-    # ------------------
-    accidents_exp = Experiment(
-        id=10,
-        dataset="accidents",
-        target="Duration_Seconds",
-        method="regression",
-        subsample=subsample or 0.8, # > 80%
-        batch_size=1024
-    )
-
-    backbone_configs = [
-        {'name': 'nn_2', 'max_iter': 5, 'learning_rate_init': 0.01, 'hidden_layer_sizes': (256, 128), 'alpha': 0.001, 'activation': 'relu'},  # shallow: 2 layers
-        {'name': 'nn_4', 'max_iter': 5, 'learning_rate_init': 0.01, 'hidden_layer_sizes': (256, 256, 128, 128), 'alpha': 0.001, 'activation': 'relu'}  # deep: 4 layers
-    ]
-
-    for config in backbone_configs:
-        accidents_exp.best_params.update(config)
-        accidents_exp.update_logs()
-
-        accidents_exp.ml_logger.current_logs = []
-        accidents_exp.save_path = os.path.join(os.environ['ROOT'], f"figures/{accidents_exp.dataset}/{config['name']}")
-        os.makedirs(accidents_exp.save_path, exist_ok=True)
-        
-        accidents_exp.run_random_optimization(
-            max_param=50000, 
-            max_evals=10000, 
-            plateau_threshold=250
-        )
-        accidents_exp.run_ablations(
-            max_updates=10000, 
-            learning_threshold=0.5, 
-            learning_rate=0.01, 
-            seeds=seeds
-        )   
-    
 
 if __name__ == "__main__":
     main()
