@@ -1,7 +1,7 @@
 # custom
 logs/
 data/
-figures/
+figures*/
 cache/
 resources/
 .vscode/
