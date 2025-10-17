@@ -57,17 +57,30 @@ def main():
             exp.save_path = os.path.join(os.environ['ROOT'], f"figures/{exp.dataset}/{backbone['name']}")
             os.makedirs(exp.save_path, exist_ok=True)
             
+            '''
             exp.run_random_optimization(
                 max_param=50000, 
                 max_evals=max_evals, 
                 plateau_threshold=250
             )
-            exp.run_ablations(
+            '''
+            params = exp.run_ablations(
                 max_updates=max_evals, 
                 learning_threshold=0.5, 
-                learning_rate=backbone['learning_rate_init'], 
+                learning_rate=backbone['alpha'], 
                 seeds=seeds
             )
+            if testing: params = {'adam': (0.0, 0.99, 0.999), 'adam_no_bias': (0.0001, 0.9999, 0.999), 'rmsprop_like': (0.0, 0.0, 0.99), 'adamw': (0.0, 0.99, 0.999)}
+            adam_alpha = params['adam'][0]
+            adam_betas = params['adam'][1], params['adam'][2]
+
+            exp.run_targeted_regularization(
+                max_updates=max_evals, 
+                learning_rate=adam_alpha, 
+                betas=adam_betas,
+                seeds=seeds
+            )
+
 
 if __name__ == "__main__":
     main()

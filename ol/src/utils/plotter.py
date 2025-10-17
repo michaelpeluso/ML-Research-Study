@@ -20,7 +20,7 @@ def plot_curve(x: Union[list, Any], y_list: list, labels: Optional[list[str]] = 
     supports stability bands via std (symmetric) or explicit lower/upper (e.g., for iqr).
     bands applied to first y in y_list only.
     '''
-    plt.figure(figsize=(8,5))
+    plt.figure(figsize=(8,5), dpi=300)
     
     # wrap single curve if flat list of numbers
     if isinstance(y_list[0], (int, float)) if y_list else False:  # changed: check if first element is scalar

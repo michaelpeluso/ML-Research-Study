@@ -119,7 +119,7 @@ class MLLogger:
                 f.write("-" * 40 + "\n")
                 ro_data = []
                 for log in self.current_logs:
-                    if log['step'] in ["Randomized Hill Climbing", "Simulated Annealing", "Genetic Algorithm"]:
+                    if log.get('step') in ["Randomized Hill Climbing", "Simulated Annealing", "Genetic Algorithm"]:
                         info = log['step_info']
                         algo = log['step']
                         best_loss = info.get('best_loss', 'N/A')
@@ -181,7 +181,7 @@ class MLLogger:
             f.write("\n")
 
             # data analysis
-            data_log = next((log for log in self.current_logs if log['step'] == 'Load Data' and 'step_info' in log), None)
+            data_log = next((log for log in self.current_logs if log.get('step') == 'Load Data' and 'step_info' in log), None)
             if data_log and data_log['step_info']:
                 f.write("DATA ANALYSIS\n")
                 f.write("-" * 30 + "\n")
@@ -205,6 +205,9 @@ class MLLogger:
             f.write("DETAILED STEP ANALYSIS\n")
             f.write("-" * 30 + "\n")
             for i, log in enumerate(self.current_logs, 1):
+                # skip logs without 'step' key (e.g., metric-only logs)
+                if 'step' not in log:
+                    continue
                 f.write(f"{i}. {log['step'].upper()}\n")
                 f.write(f"   Status: {log['status'].upper()}\n")
                 f.write(f"   Timestamp: {log['timestamp']}\n")

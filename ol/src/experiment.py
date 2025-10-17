@@ -1,14 +1,11 @@
 import os
 from typing import Any, Dict, List, Optional, Tuple
 import warnings
-
-import numpy as np
 import torch
-import torch.nn as nn
 
 from experiments.random_optimization import random_optimization
 from experiments.adam_ablations import ablations
-#from experiments.adam_regularization import run_adam_regularization
+from experiments.targeted_regularization import targeted_regularization
 
 from utils.logger import MLLogger
 from utils.data_processing import load_or_process_data, wrap_into_loaders
@@ -68,9 +65,8 @@ class Experiment:
     
     # part 2: Adam Ablations
     def run_ablations(self, max_updates: int = 10000, learning_threshold: float = 0.5, learning_rate: float = 0.01, seeds: List[int] = [42, 4242, 424242]):
-        ablations(self, max_updates, learning_threshold, learning_rate, seeds)
+        return ablations(self, max_updates, learning_threshold, learning_rate, seeds)
 
     # part 3: Adam Regularization
-    def run_adam_regularization(self):
-        pass
-        #run_adam_regularization(self)
+    def run_targeted_regularization(self, max_updates: int = 10000, learning_rate: Optional[float] = None, betas: Tuple[float, float] = (0.9, 0.999), seeds: List[int] = [42, 4242, 424242]):
+        targeted_regularization(self, max_updates, learning_rate, betas, seeds)
