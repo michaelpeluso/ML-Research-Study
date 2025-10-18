@@ -51,6 +51,7 @@ def main():
         )
 
         for backbone in exp_config['backbone_configs']:
+
             exp.best_params.update(backbone)
             exp.update_logs()
             exp.ml_logger.current_logs = []
@@ -63,7 +64,7 @@ def main():
                 plateau_threshold=250
             )
             
-            params = exp.run_ablations(
+            params = exp.run_adam_ablations(
                 max_updates=max_evals, 
                 learning_threshold=0.5, 
                 learning_rate=backbone['alpha'], 

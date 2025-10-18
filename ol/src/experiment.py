@@ -4,7 +4,7 @@ import warnings
 import torch
 
 from experiments.random_optimization import random_optimization
-from experiments.adam_ablations import ablations
+from experiments.adam_ablations import adam_ablations
 from experiments.targeted_regularization import targeted_regularization
 
 from utils.logger import MLLogger
@@ -64,8 +64,8 @@ class Experiment:
         random_optimization(self, max_param, max_evals, plateau_threshold)
     
     # part 2: Adam Ablations
-    def run_ablations(self, max_updates: int = 10000, learning_threshold: float = 0.5, learning_rate: float = 0.01, seeds: List[int] = [42, 4242, 424242]):
-        return ablations(self, max_updates, learning_threshold, learning_rate, seeds)
+    def run_adam_ablations(self, max_updates: int = 10000, learning_threshold: float = 0.5, learning_rate: float = 0.01, seeds: List[int] = [42, 4242, 424242]):
+        return adam_ablations(self, max_updates, learning_threshold, learning_rate, seeds)
 
     # part 3: Adam Regularization
     def run_targeted_regularization(self, max_updates: int = 10000, learning_rate: Optional[float] = None, betas: Tuple[float, float] = (0.9, 0.999), seeds: List[int] = [42, 4242, 424242]):

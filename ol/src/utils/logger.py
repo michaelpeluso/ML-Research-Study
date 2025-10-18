@@ -111,39 +111,15 @@ class MLLogger:
         with open(output_file, 'w', encoding='utf-8') as f:
             f.write("=" * 70 + "\n")
             f.write("ML EXPERIMENT DETAILED REPORT\n")
-            f.write("=" * 70 + "\n\n")
+            f.write("=" * 70 + "\n")
+            f.write(f"Total Duration: {self.metrics.get('total_duration', 'N/A')}\n\n")
 
-            # Summary for Part 1
+            # Optimization Summary for Part 1
             if part == 1:
-                f.write("RO ALGORITHMS SUMMARY TABLE\n")
+                f.write("RANDOM OPTIMIZATION SUMMARY TABLE\n")
                 f.write("-" * 40 + "\n")
-                ro_data = []
-                for log in self.current_logs:
-                    if log.get('step') in ["Randomized Hill Climbing", "Simulated Annealing", "Genetic Algorithm"]:
-                        info = log['step_info']
-                        algo = log['step']
-                        best_loss = info.get('best_loss', 'N/A')
-                        evals = info.get('evals', 'N/A')
-                        wall_time = info.get('wall_clock_time', 'N/A')
-                        ro_data.append((algo, best_loss, evals, wall_time))
-
-                if ro_data:
-                    # Calculate dynamic column widths
-                    max_algo = max(len(algo) for algo, _, _, _ in ro_data)
-                    max_loss = max(len(f"{loss:.4f}" if isinstance(loss, (int, float)) else str(loss)) for _, loss, _, _ in ro_data)
-                    max_evals = max(len(str(evals)) for _, _, evals, _ in ro_data)
-                    max_time = max(len(f"{time:.2f}s" if isinstance(time, (int, float)) else str(time)) for _, _, _, time in ro_data)
-
-                    table_str = f"| {'Algorithm':<{max_algo}} | {'Best Val Loss':>{max_loss}} | {'# Func Evals':>{max_evals}} | {'Wall Time':>{max_time}} |\n"
-                    table_str += f"|{'-' * (max_algo + 2)}|{'-' * (max_loss + 2)}|{'-' * (max_evals + 2)}|{'-' * (max_time + 2)}|\n"
-                    for algo, loss, evals, time in ro_data:
-                        loss_str = f"{loss:.4f}" if isinstance(loss, (int, float)) else str(loss)
-                        time_str = f"{time:.2f}s" if isinstance(time, (int, float)) else str(time)
-                        table_str += f"| {algo:<{max_algo}} | {loss_str:>{max_loss}} | {evals:>{max_evals}} | {time_str:>{max_time}} |\n"
-                    f.write(table_str + "\n\n")
-                else:
-                    f.write("No RO data available.\n\n")
-
+                table_str = self.metrics.get('part1_table', 'No table available')
+                f.write(table_str + "\n\n")
             # Optimizer Ablations Summary for Part 2
             if part == 2:
                 f.write("OPTIMIZER ABLATIONS SUMMARY TABLE\n")
@@ -151,12 +127,62 @@ class MLLogger:
                 table_str = self.metrics.get('part2_table', 'No table available')
                 f.write(table_str + "\n\n")
 
-            # Key Metrics
-            f.write("KEY METRICS\n")
-            f.write("-" * 40 + "\n")
-            key_metrics = {k: v for k, v in self.metrics.items() if any(sub in k for sub in ['best_loss', 'avg_steps_to_l', 'avg_test_loss', 'test_metric'])}
-            for k, v in key_metrics.items():
-                f.write(f"{k.replace('_', ' ').title()}: {v}\n")
+            # Regularization Summary for Part 3
+            if part == 3:
+                f.write("REGULARIZATION SUMMARY TABLE\n")
+                f.write("-" * 40 + "\n")
+                table_str = self.metrics.get('regularization_table', 'No table available')
+                f.write(table_str + "\n\n")
+            
+            if part == 1:
+                # For RO: show parameter budget, convergence, and algorithm-specific info
+                for log in self.current_logs:
+                    if log.get('step') in ["Randomized Hill Climbing", "Simulated Annealing", "Genetic Algorithm"]:
+                        info = log['step_info']
+                        algo = log['step']
+                        f.write(f"{algo}:\n")
+                        f.write(f"  Trainable Parameters: {info.get('parameters', 'N/A')}\n")
+                        f.write(f"  Budget: {info.get('max_evals', 'N/A'):,} evaluations\n")
+                        f.write(f"  Used: {info.get('evals', 'N/A'):,} ({info.get('evals', 0) / info.get('max_evals', 1) * 100:.1f}% of budget)\n")
+                        f.write(f"  Initial Loss: {info.get('initial_loss', 'N/A')}\n")
+                        f.write(f"  Final Loss: {info.get('best_loss', 'N/A')}\n")
+                        improvement = info.get('initial_loss', 0) - info.get('best_loss', 0)
+                        f.write(f"  Improvement: {improvement:.4f} ({improvement / info.get('initial_loss', 1) * 100:.1f}%)\n")
+                        
+                        # Algorithm-specific details
+                        if algo == "Randomized Hill Climbing":
+                            f.write(f"  Restarts: {info.get('restarts', 'N/A')}\n")
+                            f.write(f"  Decay Rate: {info.get('decay_rate', 'N/A'):.4f}\n")
+                        elif algo == "Simulated Annealing":
+                            f.write(f"  Initial Temp: {info.get('initial_temp', 'N/A'):.4f}\n")
+                            f.write(f"  Final Temp: {info.get('final_temp', 'N/A'):.6f}\n")
+                            f.write(f"  Cooling Rate: {info.get('cooling_rate', 'N/A'):.4f}\n")
+                        elif algo == "Genetic Algorithm":
+                            f.write(f"  Generations: {info.get('generation_count', 'N/A')}\n")
+                            f.write(f"  Population Size: {info.get('pop_size', 'N/A')}\n")
+                            f.write(f"  Mutation Rate: {info.get('mutation_rate', 'N/A'):.2f}\n")
+                        f.write("\n")
+            elif part == 2:
+                # For Adam ablations
+                key_metrics = {k: v for k, v in self.metrics.items() if any(sub in k for sub in ['avg_steps_to_l', 'avg_test_loss', 'test_metric'])}
+                for k, v in key_metrics.items():
+                    f.write(f"{k.replace('_', ' ').title()}: {v}\n")
+            elif part == 3:
+                # For Regularization: show best technique and combined results
+                f.write("Regularization Impact:\n")
+                # Show combined recipe summary if available
+                combined_summary = self.metrics.get('combined_recipe_summary', '')
+                if combined_summary:
+                    f.write(f"{combined_summary}\n\n")
+                # Show hypothesis result
+                hypothesis = self.metrics.get('combined_recipe_hypothesis', '')
+                if hypothesis:
+                    f.write(f"Hypothesis Result:\n{hypothesis}\n")
+            else:
+                # Generic fallback
+                key_metrics = {k: v for k, v in self.metrics.items() if any(sub in k for sub in ['best_loss', 'test_metric'])}
+                for k, v in key_metrics.items():
+                    f.write(f"{k.replace('_', ' ').title()}: {v}\n")
             f.write("\n")
 
             # system information
@@ -219,12 +245,27 @@ class MLLogger:
                 f.write(f"   Performance: {perf}\n")
                 if log['step_info']:
                     f.write("   Step Details:\n")
+                    # Exclude metrics that appear in KEY METRICS or summary tables
+                    exclude_keys = {
+                        # Summary metrics
+                        'parameters', 'max_evals', 'evals', 'best_loss', 'initial_loss',
+                        'training_duration', 'single_eval_duration', 'history',
+                        # RHC specific
+                        'restarts', 'decay_rate', 'restart_losses',
+                        # SA specific
+                        'initial_temp', 'final_temp', 'cooling_rate',
+                        # GA specific  
+                        'generation_count', 'pop_size', 'mutation_rate'
+                    }
                     for k, v in log['step_info'].items():
+                        # Skip excluded keys and restart_/generation_ prefixes
+                        if k in exclude_keys or k.startswith('restart_') or k.startswith('generation_'):
+                            continue
                         if v is not None:
-                            if isinstance(v, (int)):
+                            if isinstance(v, int):
                                 f.write(f"     {k.replace('_', ' ').title()}: {v}\n")
-                            if isinstance(v, (float)):
-                                f.write(f"     {k.replace('_', ' ').title()}: {v:,.4f}\n")
+                            elif isinstance(v, float):
+                                f.write(f"     {k.replace('_', ' ').title()}: {v:.4f}\n")
                             elif isinstance(v, dict):
                                 f.write(f"     {k.replace('_', ' ').title()}:\n")
                                 for sub_k, sub_v in v.items():

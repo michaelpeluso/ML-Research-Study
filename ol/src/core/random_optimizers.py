@@ -88,23 +88,29 @@ def rhc(
 
     print(f"[RHC] Starting with {sum(p.numel() for p in model.parameters())} parameters, restarts={restarts}, max_evals={max_evals}")
     if logger is None: logger = MLLogger()
-    start_time = time.perf_counter()
+    
     last_improvement_eval = 1  # plateau tracking
     best_flat = get_trainable_params(model)
-    best_loss = validation_objective(best_flat, model, val_loader, loss_fn, device, val_subset_batches)
-    history = [(1, best_loss)]  # initial eval
+    
+    # Measure single evaluation time
+    eval_start = time.perf_counter()
+    best_loss = initial_loss = validation_objective(best_flat, model, val_loader, loss_fn, device, val_subset_batches)
+    single_eval_time = time.perf_counter() - eval_start
+    
+    history = [(1, initial_loss)]  # initial eval
     evals = 1
 
     with logger.log_step("Randomized Hill Climbing") as step_info:
+        training_start = time.perf_counter()  # Start timing the training loop
         step_info.update({
             'parameters': sum(p.numel() for p in model.parameters() if p.requires_grad),  # trainable params
             'restarts': restarts,
+            'initial_loss': initial_loss,
             'max_evals': max_evals,
             'initial_perturb_scale': initial_perturb_scale,
             'decay_rate': decay_rate,
             'plateau_threshold': plateau_threshold,
             'min_delta': min_delta,
-            'initial_loss': best_loss  # log initial loss
         })
 
         restart_losses = []  # track losses per restart
@@ -149,17 +155,18 @@ def rhc(
 
         # set best individual to model
         set_trainable_params(model, best_flat)
-        elapsed = time.perf_counter() - start_time
-        print(f"[RHC] Completed: total_evals={evals}, final_best_loss={best_loss:.6f}, elapsed={elapsed:.3f}s")
+        training_time = time.perf_counter() - training_start
+        print(f"[RHC] Completed: total_evals={evals}, final_best_loss={best_loss:.6f}, training_time={training_time:.3f}s")
         
         step_info.update({
             'best_loss': best_loss,
             'evals': evals,
-            'wall_clock_time': elapsed,
+            'single_eval_duration': single_eval_time,
+            'training_duration': training_time,
             'history': history,
             'restart_losses': restart_losses  # log all restart losses
         })
-        return model, history
+    return model, history
 
 """
 Simulated Annealing (SA) for Random Optimization.
@@ -184,14 +191,20 @@ def sa(
     ) -> Tuple[nn.Module, List[Tuple[int, float]]]:
     print(f"[SA] Starting with {sum(p.numel() for p in model.parameters())} parameters, max_evals={max_evals}")
     if logger is None: logger = MLLogger()
-    start_time = time.perf_counter()
+    
     best_flat = get_trainable_params(model)
+    
+    # Measure single evaluation time
+    eval_start = time.perf_counter()
     best_loss = validation_objective(best_flat, model, val_loader, loss_fn, device, val_subset_batches)
+    single_eval_time = time.perf_counter() - eval_start
+    
     history = [(1, best_loss)]
     evals = 1
     temp = initial_temp
 
     with logger.log_step("Simulated Annealing") as step_info:
+        training_start = time.perf_counter()  # Start timing the training loop
         step_info.update({
             'parameters': sum(p.numel() for p in model.parameters() if p.requires_grad),
             'max_evals': max_evals,
@@ -222,17 +235,18 @@ def sa(
                 break
 
         set_trainable_params(model, best_flat)
-        elapsed = time.perf_counter() - start_time
-        print(f"[SA] Completed: total_evals={evals}, final_best_loss={best_loss:.6f}, elapsed={elapsed:.3f}s")
+        training_time = time.perf_counter() - training_start
+        print(f"[SA] Completed: total_evals={evals}, final_best_loss={best_loss:.6f}, training_time={training_time:.3f}s")
         
         step_info.update({
             'best_loss': best_loss,
             'evals': evals,
-            'wall_clock_time': elapsed,
+            'single_eval_duration': single_eval_time,
+            'training_duration': training_time,
             'history': history,
-            'final_temp': temp
+            'final_temp': temp, 
         })
-        return model, history
+    return model, history
 
 """
 Genetic Algorithm (GA) for Random Optimization.
@@ -257,14 +271,20 @@ def ga(
     ) -> Tuple[nn.Module, List[Tuple[int, float]]]:
     print(f"[GA] Starting with {sum(p.numel() for p in model.parameters())} parameters, pop_size={pop_size}, max_evals={max_evals}")
     if logger is None: logger = MLLogger()
-    start_time = time.perf_counter()
+    
     pop = [get_trainable_params(model) + torch.randn_like(get_trainable_params(model), device=device) * 0.1 for _ in range(pop_size)]
+    
+    # Measure single evaluation time (average of initial population)
+    eval_start = time.perf_counter()
     fitness = [validation_objective(ind, model, val_loader, loss_fn, device, val_subset_batches) for ind in pop]
+    single_eval_time = (time.perf_counter() - eval_start) / len(pop)
+    
     evals = pop_size
     history = [(evals, min(fitness))]
     generation = 1
 
     with logger.log_step("Genetic Algorithm") as step_info:
+        training_start = time.perf_counter()  # Start timing the training loop
         step_info.update({
             'parameters': sum(p.numel() for p in model.parameters() if p.requires_grad),
             'max_evals': max_evals,
@@ -331,14 +351,15 @@ def ga(
         # set best individual to model
         best_idx = int(torch.argmin(torch.tensor(fitness, device=device)).item())
         set_trainable_params(model, pop[best_idx])
-        elapsed = time.perf_counter() - start_time
-        print(f"[GA] Completed: total_evals={evals}, final_best_loss={min(fitness):.6f}, elapsed={elapsed:.3f}s")
+        training_time = time.perf_counter() - training_start
+        print(f"[GA] Completed: total_evals={evals}, final_best_loss={min(fitness):.6f}, training_time={training_time:.3f}s")
         
         step_info.update({
             'best_loss': min(fitness),
             'evals': evals,
-            'wall_clock_time': elapsed,
+            'single_eval_duration': single_eval_time,
+            'training_duration': training_time,
             'history': history,
             'generation_count': generation
         })
-        return model, history
+    return model, history

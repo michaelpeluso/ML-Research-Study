@@ -4,6 +4,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import time
+
 from core.training import eval_loss, train_to_budget
 from core.optimizers import optimizer_factory
 from utils.plotter import plot_curve
@@ -41,7 +43,9 @@ def targeted_regularization(
     - l2, early stopping, dropout, smoothing, augmentation
     - measures test impact and generalization gap
     - plots sensitivity curves and combined results"""
-    
+
+    function_start = time.perf_counter()
+
     hidden_layers = self.best_params.get('hidden_layer_sizes', [128, 64])
     print(f"\n\nExecuting Regularization Study...\nMethod: {self.method}\nDataset: {self.dataset}\nNetwork: {hidden_layers}\n".upper())
     part3_path = f"{self.save_path}/{os.path.splitext(os.path.basename(__file__))[0]}"
@@ -483,7 +487,7 @@ def targeted_regularization(
         max_val_loss = max(len(f"{val:.6f} ± {val_std:.6f}") for _, val, val_std, *_ in summary_table)
         max_test_metric = max(len(f"{test:.6f} ± {test_std:.6f}") for _, _, _, test, test_std, *_ in summary_table)
         max_gen_gap = max(len(f"{gap:.6f}") for _, _, _, _, _, gap, *_ in summary_table)
-        max_time = max(len(f"{time:.4f} ± {time_std:.4f}") for _, _, _, _, _, _, time, time_std in summary_table)
+        max_time = max(len(f"{measure_time:.4f} ± {time_std:.4f}") for _, _, _, _, _, _, measure_time, time_std in summary_table)
 
         # build header
         table_str = (f"| {'Regularizer':<{max_reg_name}} | {'Val Loss':>{max_val_loss}} | "
@@ -494,10 +498,10 @@ def targeted_regularization(
                     f"{'-' * (max_time + 2)}|\n")
 
         # add rows
-        for kind, val, val_std, test, test_std, gap, time, time_std in summary_table:
+        for kind, val, val_std, test, test_std, gap, measure_time, time_std in summary_table:
             table_str += (f"| {kind:<{max_reg_name}} | {val:.6f} ± {val_std:.6f} | "
                         f"{test:.6f} ± {test_std:.6f} | {gap:>{max_gen_gap}.6f} | "
-                        f"{time:.4f} ± {time_std:.4f} |\n")
+                        f"{measure_time:.4f} ± {time_std:.4f} |\n")
 
         # add configuration summary footer
         table_str += "\nBest configurations:"
@@ -614,6 +618,11 @@ def targeted_regularization(
         self.ml_logger.log_metric('combined_recipe_hypothesis', hypothesis)
     else:
         print("\nWarning: Combined recipe runs failed to complete successfully")
+
+    # log total function timing
+    function_elapsed = time.perf_counter() - function_start
+    self.ml_logger.log_metric('total_duration', function_elapsed)
+    print(f"\n[Targeted Regularization] Total execution time: {function_elapsed:.2f}s")
 
     # generate report
     self.ml_logger.generate_log_report(output_file=f"{part3_path}/execution_report.txt", part=3)

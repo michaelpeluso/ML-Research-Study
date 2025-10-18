@@ -3,13 +3,14 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import torch
 import torch.nn as nn
+import time
 
 from core.training import eval_loss, train_to_budget
 from core.optimizers import optimizer_factory
 from utils.plotter import plot_curve, plot_heatmaps, plot_combined_heatmap
 from core.models import set_seed, MLP
 
-def ablations(
+def adam_ablations(
     self,
     max_updates: int = 10000,
     learning_threshold: float = 0.5,
@@ -20,6 +21,8 @@ def ablations(
     - measures speed, stability, generalization
     - generates sensitivity heatmaps and combined mosaic
     - plots baseline and optimized learning curves"""
+    
+    function_start = time.perf_counter()
     
     hidden_layers = self.best_params.get('hidden_layer_sizes', [128, 64])
     print(f"\n\nExecuting Optimizer Ablations...\nMethod: {self.method}\nDataset: {self.dataset}\nNetwork: {hidden_layers}\n".upper())
@@ -86,7 +89,7 @@ def ablations(
             updates = np.arange(1, len(mean_curve) + 1) * 100            
             label = f'{kind} Median (Optimized)' if optimized else f'{kind} Median (Baseline)'
             prefix = "_optimized" if optimized else "_baseline"
-            filename = f"{prefix}_curve{kind}.png"
+            filename = f"{kind}_curve{prefix}.png"
             
             plot_curve(
                 x=updates,
@@ -106,8 +109,8 @@ def ablations(
                           for kind in kinds if data_dict[kind]['curves']]
         # create x-axis list based on each curve's length
         all_updates = [np.arange(1, len(curve) + 1) * 100 for curve in all_mean_curves]
-        
-        linestyles = ['-', '--', '-.', ':', '-', '--', '-.']  # solid, dashed, dashdot, dotted
+
+        linestyles = ['-',  '-.','--', ':', '-', '--', ':']  # solid, dashed, dashdot, dotted
         title_prefix = "Optimized" if optimized else "Baseline"
         plot_curve(
             x=all_updates,
@@ -380,6 +383,11 @@ def ablations(
     if all_gaps:
         overall_best = min(all_gaps, key=lambda x: x[1])
         self.ml_logger.log_metric('overall_best_optimizer', f'{overall_best[0]} (gen_gap={overall_best[1]:.6f})')
+    
+    # log total function timing
+    function_elapsed = time.perf_counter() - function_start
+    self.ml_logger.log_metric('total_duration', function_elapsed)
+    print(f"\n[Adam Ablations] Total execution time: {function_elapsed:.2f}s")
     
     self.ml_logger.generate_log_report(output_file=f"{part2_path}/part2_report.txt", part=2)
 
