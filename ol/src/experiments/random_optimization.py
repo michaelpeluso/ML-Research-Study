@@ -5,12 +5,12 @@ import torch.nn as nn
 import time
 
 from utils.plotter import plot_curve
-from core.models import MLP
+from core.models import MLP, set_seed
 from core.random_optimizers import rhc, sa, ga, validation_objective, get_trainable_params
 from core.training import print_experiment_config
 
 
-def random_optimization(self, max_param: int = 50000, max_evals: int = 10000, plateau_threshold: int = 250):
+def random_optimization(self, max_param: int = 50000, max_evals: int = 10000, plateau_threshold: int = 250, seeds: list = [42]):
     '''
     Run Part 1 RO: freeze model, run rhc/sa/ga, log history for analysis, generate report,
     and plot curves including best-so-far objective vs. evals.
@@ -60,146 +60,191 @@ def random_optimization(self, max_param: int = 50000, max_evals: int = 10000, pl
         max_param=max_param,
         plateau_threshold=plateau_threshold,
         selected_k=selected_k,
-        trainable_params=sum(p.numel() for p in model.parameters() if p.requires_grad)
+        trainable_params=sum(p.numel() for p in model.parameters() if p.requires_grad),
+        seeds=seeds
     )
 
     # Loss function setup
     loss_fn = nn.CrossEntropyLoss() if self.method == 'classification' else nn.MSELoss()
 
-    # Run RO algorithms
-    test_losses = {}
-    all_evals = []
-    all_raw_losses = []  # collect raw losses per algo for comparison
-    all_best_so_far = []  # collect best-so-far per algo for comparison plot
-    algo_names = []
-    colors_list = ['blue', 'green', 'red']  # per-algo colors for correlation
-    for i, algo in enumerate([rhc, sa, ga]):  # run all three RO algos per report
+    # Run RO algorithms with multiple seeds for stability
+    algo_results = {}  # Store results per algorithm
+    colors_list = ['blue', 'green', 'red']
+    
+    for i, algo in enumerate([rhc, sa, ga]):
         print(f"\n{'='*70}")
-        print(f"[RO] Running algorithm: {algo.__name__.upper()}")
+        print(f"[RO] Running algorithm: {algo.__name__.upper()} across {len(seeds)} seeds")
         print(f"{'='*70}")
         
-        optimized_model, history = algo(
-            model=model,
-            val_loader=val_loader,
-            loss_fn=loss_fn,
-            device=self.device,
-            max_evals=max_evals,
-            plateau_threshold=plateau_threshold,
-            logger=self.ml_logger
-        )
-
-        # Process history
-        evals = [e for e, _ in history]
-        losses = [l for _, l in history]
-        if len(evals) != len(losses) or len(evals) < 2:
-            print(f"Skipping plot for {algo.__name__}: insufficient data (evals: {len(evals)}, losses: {len(losses)})")
-            continue
+        algo_results[algo.__name__] = {}
         
-        best_so_far = np.minimum.accumulate(np.array(losses)).tolist()  # efficient cumulative min
+        # Run algorithm across all seeds
+        for seed_idx, seed in enumerate(seeds):
+            print(f"\n[RO] {algo.__name__.upper()} - Seed {seed_idx+1}/{len(seeds)}: {seed}")
+            set_seed(seed)
+            
+            # Reinitialize model with same architecture but new seed
+            seed_model = MLP(
+                in_dim=in_dim,
+                hidden=hidden_layers,
+                out_dim=out_dim,
+                activation=self.best_params.get('activation', 'relu')
+            ).to(self.device)
+            seed_model.freeze_all_but_last_k(k=selected_k, limit=max_param)
+            
+            optimized_model, history = algo(
+                model=seed_model,
+                val_loader=val_loader,
+                loss_fn=loss_fn,
+                device=self.device,
+                max_evals=max_evals,
+                plateau_threshold=plateau_threshold,
+                logger=self.ml_logger
+            )
 
-        # Log learning curve
-        self.ml_logger.log_learning_curve({
-        'algo': algo.__name__, 'evals': evals, 'raw_losses': losses, 'best_so_far': best_so_far
-    })
-
-        # Per-algo condensed plot: raw (solid) + best-so-far (dotted) in one graph
+            # Process history
+            evals = [e for e, _ in history]
+            losses = [l for _, l in history]
+            if len(evals) < 2:
+                print(f"Skipping seed {seed}: insufficient data")
+                continue
+            
+            best_so_far = np.minimum.accumulate(np.array(losses)).tolist()
+            
+            # Evaluate on test set
+            test_loss = validation_objective(get_trainable_params(optimized_model), optimized_model, test_loader, loss_fn, self.device)
+            
+            # Store results for this seed
+            algo_results[algo.__name__][seed] = {
+                'evals': evals,
+                'losses': losses,
+                'best_so_far': best_so_far,
+                'test_loss': test_loss,
+                'final_val_loss': best_so_far[-1]
+            }
+            
+            # Log per-seed metrics
+            self.ml_logger.log_metric(f"{algo.__name__}_seed_{seed}_test_loss", test_loss)
+            self.ml_logger.log_metric(f"{algo.__name__}_seed_{seed}_final_val_loss", best_so_far[-1])
+        
+        # Aggregate results across seeds
+        if len(algo_results[algo.__name__]) == 0:
+            print(f"[RO] No valid results for {algo.__name__}, skipping")
+            continue
+            
+        # Collect final losses and test losses
+        final_val_losses = [algo_results[algo.__name__][s]['final_val_loss'] for s in algo_results[algo.__name__]]
+        test_losses_list = [algo_results[algo.__name__][s]['test_loss'] for s in algo_results[algo.__name__]]
+        
+        # Compute statistics
+        mean_final_val = np.mean(final_val_losses)
+        std_final_val = np.std(final_val_losses)
+        mean_test = np.mean(test_losses_list)
+        std_test = np.std(test_losses_list)
+        
+        print(f"\n[RO] {algo.__name__.upper()} Summary across {len(seeds)} seeds:")
+        print(f"  Final Val Loss: {mean_final_val:.6f} ± {std_final_val:.6f}")
+        print(f"  Test Loss:      {mean_test:.6f} ± {std_test:.6f}")
+        
+        # Log aggregate statistics
+        self.ml_logger.log_metric(f"{algo.__name__}_mean_final_val_loss", mean_final_val)
+        self.ml_logger.log_metric(f"{algo.__name__}_std_final_val_loss", std_final_val)
+        self.ml_logger.log_metric(f"{algo.__name__}_mean_test_loss", mean_test)
+        self.ml_logger.log_metric(f"{algo.__name__}_std_test_loss", std_test)
+        
+        # Create stability plot with variance bands (median ± std)
+        # Interpolate all curves to common eval points for averaging
+        max_evals_seen = max(len(algo_results[algo.__name__][s]['evals']) for s in algo_results[algo.__name__])
+        common_evals = np.linspace(1, max_evals, min(1000, max_evals_seen))
+        
+        interpolated_curves = []
+        for seed in algo_results[algo.__name__]:
+            result = algo_results[algo.__name__][seed]
+            interp_losses = np.interp(common_evals, result['evals'], result['best_so_far'])
+            interpolated_curves.append(interp_losses)
+        
+        interpolated_curves = np.array(interpolated_curves)
+        median_curve = np.median(interpolated_curves, axis=0)
+        std_curve = np.std(interpolated_curves, axis=0)
+        
+        # Plot with stability bands
         plot_curve(
-            x=evals,
-            y_list=[losses, best_so_far],
-            labels=["Raw Loss", "Best-so-Far"],
-            linestyles=['-', '--'],  # changed: dotted for best-so-far
+            x=common_evals,
+            y_list=[median_curve],
+            labels=[f"{algo.__name__.upper()} Median (n={len(seeds)})"],
             xlabel="Function Evaluations",
-            ylabel="Validation Loss",
-            title=f"{algo.__name__.upper()} Condensed Curves on {self.dataset.title()} dataset (hidden: {hidden_layers})",
-            save_path=f"{part1_path}/{algo.__name__}_condensed.png",
-            colors=[colors_list[i], colors_list[i]]  # same color, different style
+            ylabel="Validation Loss (Best-so-Far)",
+            title=f"{algo.__name__.upper()} Stability on {self.dataset.title()} dataset (hidden: {hidden_layers})",
+            save_path=f"{part1_path}/{algo.__name__}_stability.png",
+            colors=[colors_list[i]],
+            std=std_curve,
+            band_label='± Std Dev'
         )
 
-        # Collect for multi-algo comparisons
-        all_evals.append(evals)
-        all_raw_losses.append(losses)
-        all_best_so_far.append(best_so_far)
-        algo_names.append(algo.__name__)
-
-        # Evaluate on test set
-        test_loss = validation_objective(get_trainable_params(optimized_model), optimized_model, test_loader, loss_fn, self.device)
-        test_losses[algo.__name__] = test_loss
-        self.ml_logger.log_metric(f"{algo.__name__}_test_loss", test_loss)
-
-    # combined plot
+    # Combined comparison plot: median curves for all algorithms
+    print(f"\n{'='*70}")
+    print(f"[RO] Generating combined comparison plot")
+    print(f"{'='*70}")
+    
     x_combined = []
     y_combined = []
     labels_combined = []
-    linestyles_combined = []
     colors_combined = []
     colors_list = ['blue', 'green', 'red']
-    for i in range(len(algo_names)):
-        x_combined.append(all_evals[i])
-        y_combined.append(all_raw_losses[i])
-        labels_combined.append(f"{algo_names[i]} Raw")
-        linestyles_combined.append('-')
+    
+    for i, algo_name in enumerate(algo_results.keys()):
+        if len(algo_results[algo_name]) == 0:
+            continue
+        
+        # Interpolate to common eval points
+        max_evals_seen = max(len(algo_results[algo_name][s]['evals']) for s in algo_results[algo_name])
+        common_evals = np.linspace(1, max_evals, min(1000, max_evals_seen))
+        
+        interpolated_curves = []
+        for seed in algo_results[algo_name]:
+            result = algo_results[algo_name][seed]
+            interp_losses = np.interp(common_evals, result['evals'], result['best_so_far'])
+            interpolated_curves.append(interp_losses)
+        
+        median_curve = np.median(interpolated_curves, axis=0)
+        
+        x_combined.append(common_evals)
+        y_combined.append(median_curve)
+        labels_combined.append(f"{algo_name.upper()} Median")
         colors_combined.append(colors_list[i])
-
-        x_combined.append(all_evals[i])
-        y_combined.append(all_best_so_far[i])
-        labels_combined.append(f"{algo_names[i]} Best")
-        linestyles_combined.append('--')
-        colors_combined.append(colors_list[i])
-
+    
     plot_curve(
-        x_combined, y_combined, labels=labels_combined,
-        xlabel="Function Evaluations", ylabel="Validation Loss",
-        title=f"Raw and Best Evaluations on {self.dataset.title()} dataset (hidden: {hidden_layers})",
-        save_path=f"{part1_path}/combined_ro_curves.png",
-        colors=colors_combined, linestyles=linestyles_combined
+        x_combined, y_combined, labels=labels_combined, colors=colors_combined,
+        xlabel="Function Evaluations", ylabel="Validation Loss (Best-so-Far)",
+        title=f"RO Algorithms Comparison on {self.dataset.title()} dataset (hidden: {hidden_layers})",
+        save_path=f"{part1_path}/combined_comparison.png"
     )
 
-    # test losses
-    for algo_name, test_loss in test_losses.items():
-        print(f"{algo_name} Test Loss: {test_loss}")
-        self.ml_logger.log_metric(f"{algo_name}_test_loss", test_loss)
+    # Log summary table with statistics
+    print(f"\n{'='*70}")
+    print(f"[RO] Summary Statistics")
+    print(f"{'='*70}")
+    
+    table_str = "| Algorithm | Final Val Loss (Mean ± Std) | Test Loss (Mean ± Std) | Seeds |\n"
+    table_str += "|-----------|------------------------------|------------------------|-------|\n"
+    for algo_name in algo_results.keys():
+        if len(algo_results[algo_name]) == 0:
+            continue
+        final_val_losses = [algo_results[algo_name][s]['final_val_loss'] for s in algo_results[algo_name]]
+        test_losses_list = [algo_results[algo_name][s]['test_loss'] for s in algo_results[algo_name]]
+        mean_val = np.mean(final_val_losses)
+        std_val = np.std(final_val_losses)
+        mean_test = np.mean(test_losses_list)
+        std_test = np.std(test_losses_list)
+        table_str += f"| {algo_name.upper()} | {mean_val:.6f} ± {std_val:.6f} | {mean_test:.6f} ± {std_test:.6f} | {len(algo_results[algo_name])} |\n"
+    
+    print(f"\nRO Summary Statistics:\n{table_str}")
+    self.ml_logger.log_metric('ro_summary_table', table_str)
 
-    # log total function timing
+    # Log total function timing
     function_elapsed = time.perf_counter() - function_start
     self.ml_logger.log_metric('total_duration', function_elapsed)
     print(f"\n[Random Optimization] Total execution time: {function_elapsed:.2f}s")
 
-    # Build RO algorithms summary table
-    table_lines = []
-    table_lines.append("RO ALGORITHMS SUMMARY TABLE")
-    table_lines.append("-" * 80)
-    
-    ro_data = []
-    for algo_name in algo_names:
-        test_loss = test_losses.get(algo_name, 'N/A')
-        # Find history for this algo from all_evals/all_raw_losses
-        idx = algo_names.index(algo_name)
-        evals_count = len(all_evals[idx])
-        best_val_loss = min(all_raw_losses[idx]) if all_raw_losses[idx] else 'N/A'
-        ro_data.append((algo_name, best_val_loss, evals_count, test_loss))
-    
-    if ro_data:
-        # Calculate dynamic column widths
-        max_algo = max(len(algo) for algo, _, _, _ in ro_data)
-        max_best = max(len(f"{loss:.4f}" if isinstance(loss, (int, float)) else str(loss)) for _, loss, _, _ in ro_data)
-        max_evals = max(len(str(evals)) for _, _, evals, _ in ro_data)
-        max_test = max(len(f"{t:.4f}" if isinstance(t, (int, float)) else str(t)) for _, _, _, t in ro_data)
-        
-        # Build table
-        header = f"| {'Algorithm':<{max_algo}} | {'Best Val Loss':>{max_best}} | {'# Evals':>{max_evals}} | {'Test Loss':>{max_test}} |"
-        separator = f"|{'-' * (max_algo + 2)}|{'-' * (max_best + 2)}|{'-' * (max_evals + 2)}|{'-' * (max_test + 2)}|"
-        table_lines.append(header)
-        table_lines.append(separator)
-        
-        for algo, best_loss, evals_count, test_loss in ro_data:
-            best_str = f"{best_loss:.4f}" if isinstance(best_loss, (int, float)) else str(best_loss)
-            test_str = f"{test_loss:.4f}" if isinstance(test_loss, (int, float)) else str(test_loss)
-            row = f"| {algo:<{max_algo}} | {best_str:>{max_best}} | {evals_count:>{max_evals}} | {test_str:>{max_test}} |"
-            table_lines.append(row)
-        
-        table_text = "\n".join(table_lines)
-        print("\n" + table_text)
-        self.ml_logger.log_metric('part1_table', table_text)
-
-    # generate report
-    self.ml_logger.generate_log_report(output_file=f"{part1_path}/execution_report.txt", part=1)
+    # Generate report
+    self.ml_logger.generate_log_report(output_file=f"{part1_path}/part1_report.txt", part=1)

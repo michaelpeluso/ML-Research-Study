@@ -211,10 +211,11 @@ def sa(
         loss_fn: Callable,
         device: torch.device,
         max_evals: int = 10000,
-        initial_temp: float = 1.0,
+        initial_temp: float = 0.1,
         min_temp: float = 0.001,
         cooling_rate: float = 0.003,
         initial_perturb_scale: float = 0.1,
+        perturb_decay: float = 0.995,
         plateau_threshold: int = 1000,
         min_delta: float = 1e-6,
         val_subset_batches: int | None = None,
@@ -230,9 +231,14 @@ def sa(
     best_loss = validation_objective(best_flat, model, val_loader, loss_fn, device, val_subset_batches)
     single_eval_time = time.perf_counter() - eval_start
     
+    # SA needs to track both current state and best state
+    current_flat = best_flat.clone()
+    current_loss = best_loss
+    
     history = [(1, best_loss)]
     evals = 1
     temp = initial_temp
+    perturb_scale = initial_perturb_scale
 
     with logger.log_step("Simulated Annealing") as step_info:
         training_start = time.perf_counter()  # Start timing the training loop
@@ -242,6 +248,8 @@ def sa(
             'initial_temp': initial_temp,
             'min_temp': min_temp,
             'cooling_rate': cooling_rate,
+            'initial_perturb_scale': initial_perturb_scale,
+            'perturb_decay': perturb_decay,
             'plateau_threshold': plateau_threshold,
             'min_delta': min_delta,
             'initial_loss': best_loss
@@ -249,21 +257,39 @@ def sa(
 
         last_improvement_eval = 1
         while evals < max_evals and temp > min_temp:
-            current_flat = best_flat + torch.randn_like(best_flat, device=device) * initial_perturb_scale
-            current_loss = validation_objective(current_flat, model, val_loader, loss_fn, device, val_subset_batches)
-            improvement = best_loss - current_loss
+            # Perturb from current state with decaying scale
+            candidate_flat = current_flat + torch.randn_like(current_flat, device=device) * perturb_scale
+            candidate_loss = validation_objective(candidate_flat, model, val_loader, loss_fn, device, val_subset_batches)
+            improvement = current_loss - candidate_loss
+            
             import math
-            if improvement > 0 or torch.rand(1, device=device).item() < math.exp(improvement / temp):
-                best_flat = current_flat.clone()
-                best_loss = current_loss
-                last_improvement_eval = evals
+            # Accept if better OR with probability exp(improvement/temp)
+            # When improvement < 0 (worse), acceptance probability = exp(negative_value/temp)
+            accept = False
+            if improvement > 0:
+                accept = True
+            elif temp > 0:
+                acceptance_prob = math.exp(improvement / temp)  # improvement is negative
+                accept = torch.rand(1, device=device).item() < acceptance_prob
+            
+            if accept:
+                current_flat = candidate_flat.clone()
+                current_loss = candidate_loss
+                
+                # Update best if this is actually better
+                if candidate_loss < best_loss - min_delta:
+                    best_flat = candidate_flat.clone()
+                    best_loss = candidate_loss
+                    last_improvement_eval = evals
+            
             evals += 1
-            history.append((evals, current_loss))
+            history.append((evals, best_loss))  # Log BEST loss for monotonic curve
             temp *= (1 - cooling_rate)
+            perturb_scale *= perturb_decay  # Decay perturbation scale
             
             # Progress logging every 500 evals
             if evals % 500 == 0:
-                log_ro_progress("SA", evals, max_evals, best_loss, training_start, extra_info=f"Temp: {temp:.4f}")
+                log_ro_progress("SA", evals, max_evals, best_loss, training_start, extra_info=f"Temp: {temp:.4f}, Scale: {perturb_scale:.4f}")
 
             if evals - last_improvement_eval > plateau_threshold:
                 print(f"[SA] Stopping early at eval {evals} due to plateau")
@@ -279,7 +305,8 @@ def sa(
             'single_eval_duration': single_eval_time,
             'training_duration': training_time,
             'history': history,
-            'final_temp': temp, 
+            'final_temp': temp,
+            'final_perturb_scale': perturb_scale
         })
     return model, history
 

@@ -12,9 +12,9 @@ def main():
 
     # L2 testing
     testing = False
-    subsample = 0.1 if testing else None
+    subsample = 0.1 if testing else 0.1
     seeds = [42] if testing else [42, 4242, 424242]
-    max_evals = 500 if testing else 2500
+    max_evals = 500 if testing else 500
 
     # experiment flags
     run_random_optimization = True
@@ -70,7 +70,8 @@ def main():
                 exp.run_random_optimization(
                     max_param=50000, 
                     max_evals=max_evals, 
-                    plateau_threshold=500
+                    plateau_threshold=500,
+                    seeds=seeds
                 )
             
             if run_adam_ablations:

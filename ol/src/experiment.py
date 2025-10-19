@@ -60,8 +60,8 @@ class Experiment:
         )
 
     # part 1: Random Optimization
-    def run_random_optimization(self, max_param: int = 50000, max_evals: int = 11000, plateau_threshold: int = 250):
-        random_optimization(self, max_param, max_evals, plateau_threshold)
+    def run_random_optimization(self, max_param: int = 50000, max_evals: int = 11000, plateau_threshold: int = 250, seeds: List[int] = [42, 4242, 424242]):
+        random_optimization(self, max_param, max_evals, plateau_threshold, seeds)
     
     # part 2: Adam Ablations
     def run_adam_ablations(self, max_updates: int = 10000, learning_threshold: float = 0.5, learning_rate: float = 0.01, seeds: List[int] = [42, 4242, 424242]):
