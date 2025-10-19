@@ -11,7 +11,7 @@ from experiment import Experiment
 def main():
 
     # L2 testing
-    testing = True
+    testing = False
     subsample = 0.1 if testing else None
     seeds = [42] if testing else [42, 4242, 424242]
     max_evals = 500 if testing else 2500
