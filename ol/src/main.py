@@ -11,7 +11,7 @@ from experiment import Experiment
 def main():
 
     # L2 testing
-    testing = False
+    testing = True
     subsample = 0.1 if testing else None
     seeds = [42] if testing else [42, 4242, 424242]
     max_evals = 500 if testing else 2500
@@ -70,7 +70,7 @@ def main():
                 exp.run_random_optimization(
                     max_param=50000, 
                     max_evals=max_evals, 
-                    plateau_threshold=250
+                    plateau_threshold=500
                 )
             
             if run_adam_ablations:

@@ -35,6 +35,33 @@ def set_trainable_params(model: nn.Module, flat_params: torch.Tensor) -> None:
             p.data.copy_(flat_params[offset:offset + numel].view_as(p))
             offset += numel
 
+# progress logging for random optimization algorithms
+def log_ro_progress(
+    algo_name: str,
+    evals: int,
+    max_evals: int,
+    best_loss: float,
+    training_start: float,
+    extra_info: str = ""
+) -> None:
+    """Log progress for random optimization algorithms every N evaluations"""
+    elapsed_time = time.perf_counter() - training_start
+    progress_pct = (evals / max_evals) * 100
+    extra = f" | {extra_info}" if extra_info else ""
+    print(f"  [{algo_name}] Eval {evals}/{max_evals} ({progress_pct:.1f}%) | Best Loss: {best_loss:.4f}{extra} | Time: {elapsed_time:.1f}s")
+
+def log_ga_generation(
+    generation: int,
+    evals: int,
+    max_evals: int,
+    best_fitness: float,
+    training_start: float
+) -> None:
+    """Log progress for genetic algorithm per generation"""
+    elapsed_time = time.perf_counter() - training_start
+    progress_pct = (evals / max_evals) * 100
+    print(f"  [GA] Generation {generation}: evals={evals}/{max_evals} ({progress_pct:.1f}%) | Best Fitness: {best_fitness:.4f} | Time: {elapsed_time:.1f}s")
+
 # compute val loss as ro objective, counts as 1 func eval
 def validation_objective(
     flat_params: torch.Tensor,
@@ -144,6 +171,10 @@ def rhc(
                 perturb_scale *= decay_rate
                 evals += 1
                 history.append((evals, current_loss))
+                
+                # Progress logging every 500 evals
+                if evals % 500 == 0:
+                    log_ro_progress("RHC", evals, max_evals, best_loss, training_start)
 
                 if evals - last_improvement_eval > plateau_threshold:
                     print(f"[RHC] Stopping early at eval {evals} due to plateau")
@@ -229,6 +260,10 @@ def sa(
             evals += 1
             history.append((evals, current_loss))
             temp *= (1 - cooling_rate)
+            
+            # Progress logging every 500 evals
+            if evals % 500 == 0:
+                log_ro_progress("SA", evals, max_evals, best_loss, training_start, extra_info=f"Temp: {temp:.4f}")
 
             if evals - last_improvement_eval > plateau_threshold:
                 print(f"[SA] Stopping early at eval {evals} due to plateau")
@@ -329,7 +364,9 @@ def ga(
 
             min_fit = min(fitness)
             history.append((evals, min_fit))
-            print(f"[GA] Generation {generation} complete: evals={evals}/{max_evals}, best_fitness={min_fit:.6f}")
+            
+            # Progress logging every generation
+            log_ga_generation(generation, evals, max_evals, min_fit, training_start)
 
             # log generation data
             logger.log_metric(f'generation_{generation}_best_fitness', min_fit)

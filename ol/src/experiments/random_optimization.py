@@ -7,6 +7,7 @@ import time
 from utils.plotter import plot_curve
 from core.models import MLP
 from core.random_optimizers import rhc, sa, ga, validation_objective, get_trainable_params
+from core.training import print_experiment_config
 
 
 def random_optimization(self, max_param: int = 50000, max_evals: int = 10000, plateau_threshold: int = 250):
@@ -17,7 +18,6 @@ def random_optimization(self, max_param: int = 50000, max_evals: int = 10000, pl
     function_start = time.perf_counter()
     
     hidden_layers = self.best_params.get('hidden_layer_sizes', [128, 64])
-    print(f"\n\nExecuting Randomized optimization...\nMethod: {self.method}\nDataset: {self.dataset}\nNetwork: {hidden_layers}\n".upper())
     part1_path = f"{self.save_path}/{os.path.splitext(os.path.basename(__file__))[0]}"
     os.makedirs(part1_path, exist_ok=True)
 
@@ -42,6 +42,27 @@ def random_optimization(self, max_param: int = 50000, max_evals: int = 10000, pl
             break
     model.freeze_all_but_last_k(k=selected_k, limit=max_param)
 
+    # Print detailed experiment configuration
+    print_experiment_config(
+        part_name="RO: Random Optimization",
+        dataset=self.dataset,
+        method=self.method,
+        architecture=hidden_layers,
+        device=self.device,
+        optimizer_name="RHC, SA, GA",
+        learning_rate=0.0,  # N/A for random optimization
+        max_updates=max_evals,
+        l_threshold=0.0,  # N/A for random optimization
+        train_loader=train_loader,
+        val_loader=val_loader,
+        test_loader=test_loader,
+        model=model,
+        max_param=max_param,
+        plateau_threshold=plateau_threshold,
+        selected_k=selected_k,
+        trainable_params=sum(p.numel() for p in model.parameters() if p.requires_grad)
+    )
+
     # Loss function setup
     loss_fn = nn.CrossEntropyLoss() if self.method == 'classification' else nn.MSELoss()
 
@@ -53,6 +74,10 @@ def random_optimization(self, max_param: int = 50000, max_evals: int = 10000, pl
     algo_names = []
     colors_list = ['blue', 'green', 'red']  # per-algo colors for correlation
     for i, algo in enumerate([rhc, sa, ga]):  # run all three RO algos per report
+        print(f"\n{'='*70}")
+        print(f"[RO] Running algorithm: {algo.__name__.upper()}")
+        print(f"{'='*70}")
+        
         optimized_model, history = algo(
             model=model,
             val_loader=val_loader,

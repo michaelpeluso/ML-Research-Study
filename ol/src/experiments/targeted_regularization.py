@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import time
 
-from core.training import eval_loss, train_to_budget
+from core.training import eval_loss, train_to_budget, print_experiment_config
 from core.optimizers import optimizer_factory
 from utils.plotter import plot_curve
 from core.models import set_seed, MLP
@@ -47,7 +47,6 @@ def targeted_regularization(
     function_start = time.perf_counter()
 
     hidden_layers = self.best_params.get('hidden_layer_sizes', [128, 64])
-    print(f"\n\nExecuting Regularization Study...\nMethod: {self.method}\nDataset: {self.dataset}\nNetwork: {hidden_layers}\n".upper())
     part3_path = f"{self.save_path}/{os.path.splitext(os.path.basename(__file__))[0]}"
     os.makedirs(part3_path, exist_ok=True)
 
@@ -75,6 +74,27 @@ def targeted_regularization(
 
     # initialize regularization types
     kinds = ['baseline', 'l2', 'early_stopping', 'dropout', 'label_smoothing', 'augmentation']
+    
+    # Print detailed experiment configuration
+    print_experiment_config(
+        part_name="TR: Targeted Regularization",
+        dataset=self.dataset,
+        method=self.method,
+        architecture=hidden_layers,
+        device=self.device,
+        optimizer_name="Adam",
+        learning_rate=learning_rate,
+        max_updates=max_updates,
+        l_threshold=0.0,  # No threshold for regularization experiments
+        train_loader=train_loader,
+        val_loader=val_loader,
+        test_loader=test_loader,
+        model=MLP(in_dim=in_dim, hidden=hidden_layers, out_dim=out_dim,
+                  activation=self.best_params.get('activation', 'relu')).to(self.device),
+        seeds=seeds,
+        betas=betas,
+        regularization_types=kinds
+    )
     
     # store metrics and curves
     all_data = {kind: {
@@ -147,12 +167,16 @@ def targeted_regularization(
         return curves, test_metric, wall_time, gen_gap, len(curves)
 
     # baseline: standard adam no reg
+    print(f"\n{'='*70}")
+    print(f"[TR] Running technique: BASELINE (no regularization)")
+    print(f"{'='*70}")
+    
     for kind in ['baseline']:
         results = [run_seed(kind, s) for s in seeds]
         valid_results = [res for res in results if res]
         if not valid_results:
             continue
-        # store data (similar to part 2)
+        # store data
         curves_list = [res[0] for res in valid_results]
         test_metrics = [res[1] for res in valid_results]
         times = [res[2] for res in valid_results]
@@ -188,7 +212,12 @@ def targeted_regularization(
         aug_grid = [0.01, 0.05, 0.1, 0.15]  # noise std for regression
         aug_method = 'gaussian'
 
-
+    # L2 Weight Decay Grid Search
+    print(f"\n{'='*70}")
+    print(f"[TR] Running technique: L2 WEIGHT DECAY")
+    print(f"Grid: {l2_grid}")
+    print(f"{'='*70}")
+    
     sens_l2 = np.zeros((len(l2_grid),))
     gen_gaps_l2 = np.zeros((len(l2_grid),))
     for i, wd in enumerate(l2_grid):
@@ -201,6 +230,11 @@ def targeted_regularization(
     best_l2 = l2_grid[np.argmin(sens_l2)]
 
     # early stopping: grid over patience
+    print(f"\n{'='*70}")
+    print(f"[TR] Running technique: EARLY STOPPING")
+    print(f"Grid: {patience_grid}")
+    print(f"{'='*70}")
+    
     patience_grid = [3, 5, 10, 20, 50]
     sens_es = np.zeros((len(patience_grid),))
     gen_gaps_es = np.zeros((len(patience_grid),))
@@ -214,6 +248,11 @@ def targeted_regularization(
     best_patience = patience_grid[np.argmin(sens_es)]
 
     # dropout: grid over p (excluding 0 to force dropout)
+    print(f"\n{'='*70}")
+    print(f"[TR] Running technique: DROPOUT")
+    print(f"Grid: {dropout_grid}")
+    print(f"{'='*70}")
+    
     dropout_grid = [0.1, 0.2, 0.3, 0.4, 0.5]
     sens_dropout = np.zeros((len(dropout_grid),))
     gen_gaps_dropout = np.zeros((len(dropout_grid),))
@@ -234,6 +273,12 @@ def targeted_regularization(
     # label smoothing: grid over alpha (classification only, excluding 0 to force smoothing)
     if self.method == 'classification':
         smooth_grid = [0.05, 0.1, 0.15, 0.2, 0.3]
+        
+        print(f"\n{'='*70}")
+        print(f"[TR] Running technique: LABEL SMOOTHING")
+        print(f"Grid: {smooth_grid}")
+        print(f"{'='*70}")
+        
         sens_smooth = np.zeros((len(smooth_grid),))
         gen_gaps_smooth = np.zeros((len(smooth_grid),))
         for i, sm in enumerate(smooth_grid):
@@ -248,6 +293,12 @@ def targeted_regularization(
         best_smooth = 0.0  # skip for regression
 
     # Modality-appropriate augmentation (excluding 0 to force augmentation)
+    print(f"\n{'='*70}")
+    print(f"[TR] Running technique: DATA AUGMENTATION")
+    print(f"Method: {aug_method}")
+    print(f"Grid: {aug_grid}")
+    print(f"{'='*70}")
+    
     if self.method == 'classification':
         # For classification: feature masking
         aug_grid = [0.05, 0.1, 0.15, 0.2, 0.25]  # mask probabilities
@@ -622,7 +673,6 @@ def targeted_regularization(
         hypothesis = f"\nHypothesis Test - Combined Recipe Performance:"
         hypothesis += f"\n- Best Single Regularizer Gap: {best_single_gap:.6f}"
         hypothesis += f"\n- Combined Recipe Gap: {avg_gen_gap:.6f}"
-        hypothesis += f"\n- Verdict: {'Accept' if avg_gen_gap < best_single_gap else 'Reject'} hypothesis that combined regularization improves generalization"
         
         print(recipe_summary)
         print(hypothesis)

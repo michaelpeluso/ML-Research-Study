@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import time
 
-from core.training import eval_loss, train_to_budget
+from core.training import eval_loss, train_to_budget, print_experiment_config
 from core.optimizers import optimizer_factory
 from utils.plotter import plot_curve, plot_heatmaps, plot_combined_heatmap
 from core.models import set_seed, MLP
@@ -25,7 +25,6 @@ def adam_ablations(
     function_start = time.perf_counter()
     
     hidden_layers = self.best_params.get('hidden_layer_sizes', [128, 64])
-    print(f"\n\nExecuting Optimizer Ablations...\nMethod: {self.method}\nDataset: {self.dataset}\nNetwork: {hidden_layers}\n".upper())
     part2_path = f"{self.save_path}/{os.path.splitext(os.path.basename(__file__))[0]}"
     os.makedirs(part2_path, exist_ok=True)
     
@@ -46,12 +45,32 @@ def adam_ablations(
 
     # optimizer variants to test
     kinds = ['sgd', 'sgd_momentum', 'nesterov', 'adam', 'adam_no_bias', 'rmsprop_like', 'adamw']
+    
+    learning_rate = self.best_params.get('alpha', learning_rate)
+    
+    # Print detailed experiment configuration
+    print_experiment_config(
+        part_name="AA: Adam Ablations",
+        dataset=self.dataset,
+        method=self.method,
+        architecture=hidden_layers,
+        device=self.device,
+        optimizer_name="SGD/Adam variants",
+        learning_rate=learning_rate,
+        max_updates=max_updates,
+        l_threshold=learning_threshold,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        test_loader=test_loader,
+        model=MLP(in_dim=in_dim, hidden=hidden_layers, out_dim=out_dim, 
+                  activation=self.best_params.get('activation', 'relu')).to(self.device),
+        seeds=seeds,
+        optimizers=kinds
+    )
 
     # storage for metrics and curves
     all_data: Dict[str, Dict[str, Any]] = {kind: {'curves': [], 'test_metrics': [], 'times_to_l': [], 'grad_evals': [], 'func_evals': [], 'updates': []} for kind in kinds}
     summary_table: List[Tuple[str, float, float, float, float, float, float, float]] = []
-
-    learning_rate = self.best_params.get('alpha', learning_rate)
 
     def run_seed(kind: str, seed: int, **opt_kwargs) -> Optional[Tuple[List[float], float, int, float, float]]:
         """train single model instance with given optimizer"""
@@ -66,7 +85,8 @@ def adam_ablations(
         if opt is None:
             return None
         curves, _, steps_to_l, wall_time, final_train_loss = train_to_budget(
-            local_model, opt, train_loader, val_loader, max_updates, learning_threshold, loss_fn, self.device, optimizer_name=kind
+            local_model, opt, train_loader, val_loader, max_updates, learning_threshold, loss_fn, self.device, 
+            optimizer_name=kind
         )
         test_metric = eval_loss(local_model, test_loader, loss_fn, self.device)
         return curves, test_metric, steps_to_l, wall_time, final_train_loss
@@ -132,7 +152,9 @@ def adam_ablations(
     
     # baseline runs: default hyperparameters
     for kind in kinds:
-        print(f"Running ablation for {kind}")
+        print(f"\n{'='*70}")
+        print(f"[AA] Running optimizer: {kind.upper()}")
+        print(f"{'='*70}")
 
         default_betas = (0.9, 0.999)
         default_weight_decay = 0.0
@@ -183,9 +205,9 @@ def adam_ablations(
     plot_optimizer_curves(all_data, kinds, colors_list, suffix="", optimized=False)
 
     # sensitivity analysis: adam-family hyperparameter grids
-    alpha_grid = [0.0, 1e-5, 1e-4, 1e-3]
-    beta1_grid = [0.9, 0.99, 0.999, 0.9999]
-    beta2_grid = [0.9, 0.99, 0.999, 0.9999]
+    alpha_grid = [1e-5, 1e-4, 1e-3]
+    beta1_grid = [0.85, 0.9, 0.99]
+    beta2_grid = [0.99, 0.999, 0.9999]
     default_b2 = 0.999
     default_b1 = 0.9
     data_dict = {}
@@ -202,8 +224,8 @@ def adam_ablations(
     sens_data = {}
     best_hypers = {}
     
-    for variant in adam_variants:
-        print(f"Sensitivity for {variant}")
+    for variant_idx, variant in enumerate(adam_variants):
+        print(f"[AA Sensitivity] Running variant {variant_idx+1}/{len(adam_variants)}: {variant.upper()}")
         data_dict[variant] = {
             'alpha_b1': {'sens': np.zeros((len(beta1_grid), len(alpha_grid))), 'gen_gaps': np.zeros((len(beta1_grid), len(alpha_grid)))}, 
             'alpha_b2': {'sens': np.zeros((len(beta2_grid), len(alpha_grid))), 'gen_gaps': np.zeros((len(beta2_grid), len(alpha_grid)))}
@@ -211,8 +233,12 @@ def adam_ablations(
 
         # alpha vs beta1 (skip for rmsprop_like since b1=0)
         if variant != 'rmsprop_like':
+            total_b1_runs = len(beta1_grid) * len(alpha_grid)
+            print(f"[AA Sensitivity] Grid (α, β₁): {len(alpha_grid)}×{len(beta1_grid)} = {total_b1_runs} trainings")
             for i, b1 in enumerate(beta1_grid):
                 for j, alpha in enumerate(alpha_grid):
+                    current_run = i * len(alpha_grid) + j + 1
+                    print(f"  [{variant}] (α, β₁) run {current_run}/{total_b1_runs}: α={alpha:.0e}, β₁={b1}")
                     betas = (b1, default_b2)
                     results = [run_seed(variant, seed, lr=learning_rate, betas=betas, weight_decay=alpha)]
                     valid_results = [res for res in results if res]
@@ -231,10 +257,16 @@ def adam_ablations(
                 save_path=f"{part2_path}/{variant}_alpha_b1_heatmap.png"
             )
             self.ml_logger.log_metric(f"{variant}_gen_gap_alpha_b1", np.mean(data_dict[variant]['alpha_b1']['gen_gaps']))
+        else:
+            print(f"[AA Sensitivity] Skipping (α, β₁) grid for {variant} (β₁=0 by design)")
 
         # alpha vs beta2 (always run, including rmsprop_like)
+        total_b2_runs = len(beta2_grid) * len(alpha_grid)
+        print(f"[AA Sensitivity] Grid (α, β₂): {len(alpha_grid)}×{len(beta2_grid)} = {total_b2_runs} trainings")
         for i, b2 in enumerate(beta2_grid):
             for j, alpha in enumerate(alpha_grid):
+                current_run = i * len(alpha_grid) + j + 1
+                print(f"  [{variant}] (α, β₂) run {current_run}/{total_b2_runs}: α={alpha:.0e}, β₂={b2}")
                 if variant == 'rmsprop_like':
                     betas = (0.0, b2)
                 else:
