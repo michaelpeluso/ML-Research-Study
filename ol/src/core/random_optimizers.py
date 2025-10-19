@@ -80,7 +80,7 @@ def rhc(
         max_evals: int = 10000,
         initial_perturb_scale: float = 0.1,
         decay_rate: float = 0.995,
-        plateau_threshold: int = 1000,  # max plateauing evals
+        plateau_threshold: int = 250,  # max plateauing evals
         min_delta: float = 1e-6,  # min improvement threshold
         val_subset_batches: int | None = None,
         logger: MLLogger | None = None

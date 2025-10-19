@@ -14,7 +14,13 @@ def main():
     testing = False
     subsample = 0.1 if testing else None
     seeds = [42] if testing else [42, 4242, 424242]
-    max_evals = 500 if testing else 10000
+    max_evals = 500 if testing else 2500
+
+    # experiment flags
+    run_random_optimization = True
+    run_adam_ablations = True
+    run_targeted_regularization = True
+
 
     experiments = [
         {
@@ -41,6 +47,7 @@ def main():
         }
     ]
 
+
     for exp_config in experiments:
         exp = Experiment(
             dataset=exp_config['dataset'],
@@ -58,27 +65,34 @@ def main():
             exp.save_path = os.path.join(os.environ['ROOT'], f"figures/{exp.dataset}/{backbone['name']}")
             os.makedirs(exp.save_path, exist_ok=True)
             
-            exp.run_random_optimization(
-                max_param=50000, 
-                max_evals=max_evals, 
-                plateau_threshold=250
-            )
             
-            params = exp.run_adam_ablations(
-                max_updates=max_evals, 
-                learning_threshold=0.5, 
-                learning_rate=backbone['alpha'], 
-                seeds=seeds
-            )
-            adam_alpha = params['adam'][0]
-            adam_betas = params['adam'][1], params['adam'][2]
+            if run_random_optimization:
+                exp.run_random_optimization(
+                    max_param=50000, 
+                    max_evals=max_evals, 
+                    plateau_threshold=250
+                )
+            
+            if run_adam_ablations:
+                params = exp.run_adam_ablations(
+                    max_updates=max_evals, 
+                    learning_threshold=0.5, 
+                    learning_rate=backbone['alpha'], 
+                    seeds=seeds
+                )
+                adam_alpha = params['adam'][0] if 'adam' in params else backbone['alpha']
+                adam_betas = params['adam'][1], params['adam'][2]
+            else:
+                adam_alpha = backbone['alpha']
+                adam_betas = (0.9, 0.999)
 
-            exp.run_targeted_regularization(
-                max_updates=max_evals, 
-                learning_rate=adam_alpha, 
-                betas=adam_betas,
-                seeds=seeds
-            )
+            if run_targeted_regularization:
+                exp.run_targeted_regularization(
+                    max_updates=max_evals, 
+                    learning_rate=adam_alpha, 
+                    betas=adam_betas,
+                    seeds=seeds
+                )
 
 
 if __name__ == "__main__":

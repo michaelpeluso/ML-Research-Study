@@ -41,12 +41,6 @@ def adam_ablations(
     train_loader, val_loader, test_loader = self.get_data()
     in_dim = train_loader.dataset.tensors[0].shape[1]
     out_dim = len(torch.unique(train_loader.dataset.tensors[1])) if self.method == 'classification' else 1
-    model = MLP(
-        in_dim=in_dim,
-        hidden=self.best_params.get('hidden_layer_sizes', [128, 64]),
-        out_dim=out_dim,
-        activation=self.best_params.get('activation', 'relu')
-    ).to(self.device)
 
     loss_fn = nn.CrossEntropyLoss() if self.method == 'classification' else nn.MSELoss()
 
@@ -110,7 +104,7 @@ def adam_ablations(
         # create x-axis list based on each curve's length
         all_updates = [np.arange(1, len(curve) + 1) * 100 for curve in all_mean_curves]
 
-        linestyles = ['-',  '-.','--', ':', '-', '--', ':']  # solid, dashed, dashdot, dotted
+        linestyles = ['-',  '-.','--', '-', ':', '--', ':']  # solid, dashed, dashdot, dotted
         title_prefix = "Optimized" if optimized else "Baseline"
         plot_curve(
             x=all_updates,
@@ -139,13 +133,14 @@ def adam_ablations(
     # baseline runs: default hyperparameters
     for kind in kinds:
         print(f"Running ablation for {kind}")
-        # use optimizer-specific defaults for betas
-        if kind == 'rmsprop_like':
-            default_betas = (0.0, 0.999)  # rmsprop: no momentum (beta1=0)
-        else:
-            default_betas = (0.9, 0.999)  # standard adam defaults
+
+        default_betas = (0.9, 0.999)
+        default_weight_decay = 0.0
         
-        results = [run_seed(kind, s, lr=learning_rate, betas=default_betas) for s in seeds]
+        if kind == 'rmsprop_like': default_betas = (0.0, 0.999)  # no momentum (beta1=0)
+        elif kind == 'adamw': default_weight_decay = 0.01  # decoupled weight decay
+        
+        results = [run_seed(kind, s, lr=learning_rate, betas=default_betas, weight_decay=default_weight_decay) for s in seeds]
         valid_results = [res for res in results if res]
         print(f"For {kind}, valid_results count: {len(valid_results)}")
         if not valid_results:
@@ -389,7 +384,7 @@ def adam_ablations(
     self.ml_logger.log_metric('total_duration', function_elapsed)
     print(f"\n[Adam Ablations] Total execution time: {function_elapsed:.2f}s")
     
-    self.ml_logger.generate_log_report(output_file=f"{part2_path}/part2_report.txt", part=2)
+    self.ml_logger.generate_log_report(output_file=f"{part2_path}/execution_report.txt", part=2)
 
     print(f"\nBest hypers per Adam-family variant: {best_hypers}")
     return best_hypers

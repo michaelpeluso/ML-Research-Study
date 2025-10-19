@@ -177,4 +177,4 @@ def random_optimization(self, max_param: int = 50000, max_evals: int = 10000, pl
         self.ml_logger.log_metric('part1_table', table_text)
 
     # generate report
-    self.ml_logger.generate_log_report(output_file=f"{part1_path}/part1_report.txt", part=1)
+    self.ml_logger.generate_log_report(output_file=f"{part1_path}/execution_report.txt", part=1)

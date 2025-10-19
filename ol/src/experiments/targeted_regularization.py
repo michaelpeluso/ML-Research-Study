@@ -174,8 +174,21 @@ def targeted_regularization(
         summary_table.append((kind, avg_val, std_val, avg_test, std_test, avg_gen_gap, avg_time, std_time)) # type: ignore
 
     # sensitivity for each reg
-    # l2: grid over rates (excluding 0 to force regularization)
-    l2_grid = [1e-5, 1e-4, 1e-3, 1e-2, 1e-1]
+    l2_grid = [1e-4, 1e-3, 1e-2, 1e-1]
+    patience_grid = [3, 5, 10, 20]
+    dropout_grid = [0.1, 0.2, 0.3, 0.4]
+    
+    # Classification-specific grids
+    if self.method == 'classification':
+        smooth_grid = [0.05, 0.1, 0.15, 0.2]
+        aug_grid = [0.05, 0.1, 0.15, 0.2]  # mask probabilities
+        aug_method = 'feature_mask'
+    else:
+        smooth_grid = []
+        aug_grid = [0.01, 0.05, 0.1, 0.15]  # noise std for regression
+        aug_method = 'gaussian'
+
+
     sens_l2 = np.zeros((len(l2_grid),))
     gen_gaps_l2 = np.zeros((len(l2_grid),))
     for i, wd in enumerate(l2_grid):

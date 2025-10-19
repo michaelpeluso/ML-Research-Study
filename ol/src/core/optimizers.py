@@ -204,7 +204,7 @@ def optimizer_factory(model: torch.nn.Module, kind: str, lr: float = 1e-3, **kwa
         if not isinstance(betas, tuple) or len(betas) != 2 or not all(isinstance(b, float) for b in betas):
             raise ValueError(f"betas must be tuple of two floats, got {betas}")
         eps = float(kwargs.get('eps', 1e-8)) # type: ignore
-        weight_decay = float(kwargs.get('weight_decay', 0.0)) # type: ignore
+        weight_decay = float(kwargs.get('weight_decay', 0.01 if kind == 'adamw' else 0.0)) # type: ignore
         amsgrad = bool(kwargs.get('amsgrad', False))
         maximize = bool(kwargs.get('maximize', False))
         foreach = bool(kwargs.get('foreach', None))
