@@ -38,7 +38,7 @@ def print_experiment_config(
     print(f"Optimizer:           {optimizer_name}")
     print(f"Learning Rate:       {learning_rate}")
     print(f"Max Updates:         {max_updates:,}")
-    print(f"Loss Threshold:      {l_threshold:.6f}")
+    print(f"Loss Threshold:      {l_threshold:.6f if l_threshold > 0 else 'N/A'}")
     print(f"-" * 70)
     print(f"Model Parameters:    {num_params:,} total")
     print(f"Trainable Params:    {num_trainable:,}")
