@@ -30,7 +30,7 @@ def main():
             'method': "classification",
             'subsample': subsample or 1.0,
             'batch_size': 64,
-            'learning_threshold': 0.55,
+            'learning_threshold': 0.35,
             'backbone_configs': [
                 {'name': 'nn_2', 'max_iter': 15, 'learning_rate_init': 0.05, 'hidden_layer_sizes': (256, 128), 'alpha': 1e-05, 'activation': 'tanh'},
                 {'name': 'nn_4', 'max_iter': 15, 'learning_rate_init': 0.05, 'hidden_layer_sizes': (256, 256, 128, 128), 'alpha': 1e-05, 'activation': 'tanh'}
@@ -42,7 +42,7 @@ def main():
             'method': "regression",
             'subsample': subsample or 0.8,  # > 80%
             'batch_size': 1024,
-            'learning_threshold': 10.0,
+            'learning_threshold': 0.35,
             'backbone_configs': [
                 {'name': 'nn_2', 'max_iter': 5, 'learning_rate_init': 0.01, 'hidden_layer_sizes': (256, 128), 'alpha': 0.001, 'activation': 'relu'},
                 {'name': 'nn_4', 'max_iter': 5, 'learning_rate_init': 0.01, 'hidden_layer_sizes': (256, 256, 128, 128), 'alpha': 0.001, 'activation': 'relu'}
