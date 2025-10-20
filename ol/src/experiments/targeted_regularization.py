@@ -45,6 +45,9 @@ def targeted_regularization(
     - plots sensitivity curves and combined results"""
 
     function_start = time.perf_counter()
+    
+    eval_interval = 25
+    log_interval = 100
 
     hidden_layers = self.best_params.get('hidden_layer_sizes', [128, 64])
     part3_path = f"{self.save_path}/{os.path.splitext(os.path.basename(__file__))[0]}"
@@ -146,7 +149,10 @@ def targeted_regularization(
         curves, _, _, wall_time, final_train_loss = train_to_budget(
             model, opt, train_loader, val_loader,
             max_updates, float('inf'), loss_fn, 
-            self.device, optimizer_name='adam'
+            self.device, 
+            log_interval=log_interval,
+            eval_interval=eval_interval,
+            optimizer_name='adam'
         )
 
         # early stopping: simulate by monitoring curves, stop if no improvement
@@ -251,6 +257,8 @@ def targeted_regularization(
     print(f"\n{'='*70}")
     print(f"[TR] Running technique: DROPOUT")
     print(f"Grid: {dropout_grid}")
+    print(f"Dropout Placement: After each hidden layer activation (ReLU/Tanh), before next linear layer")
+    print(f"Architecture: Input → [Linear → Activation → Dropout]* → Linear → Output")
     print(f"{'='*70}")
     
     dropout_grid = [0.1, 0.2, 0.3, 0.4, 0.5]
@@ -410,7 +418,8 @@ def targeted_regularization(
         xlabel="L2 Weight Decay",
         ylabel="Metric Value",
         title=f"L2 Sensitivity on {self.dataset.title()} (hidden: {hidden_layers})",
-        save_path=f"{part3_path}/l2_sensitivity.png"
+        save_path=f"{part3_path}/l2_sensitivity.png",
+        colors=['#1f77b4', '#ff7f0e']  # blue for Val Loss, orange for Gen Gap
     )
 
     # early stopping (patience)
@@ -421,7 +430,8 @@ def targeted_regularization(
         xlabel="Early Stopping Patience",
         ylabel="Metric Value",
         title=f"Early Stopping Sensitivity on {self.dataset.title()} (hidden: {hidden_layers})",
-        save_path=f"{part3_path}/early_stopping_sensitivity.png"
+        save_path=f"{part3_path}/early_stopping_sensitivity.png",
+        colors=['#1f77b4', '#ff7f0e']  # blue for Val Loss, orange for Gen Gap
     )
 
     # dropout
@@ -432,7 +442,8 @@ def targeted_regularization(
         xlabel="Dropout Probability",
         ylabel="Metric Value",
         title=f"Dropout Sensitivity on {self.dataset.title()} (hidden: {hidden_layers})",
-        save_path=f"{part3_path}/dropout_sensitivity.png"
+        save_path=f"{part3_path}/dropout_sensitivity.png",
+        colors=['#1f77b4', '#ff7f0e']  # blue for Val Loss, orange for Gen Gap
     )
 
     # label smoothing (classification only) - guard against unbound variables
@@ -444,7 +455,8 @@ def targeted_regularization(
             xlabel="Label Smoothing (alpha)",
             ylabel="Metric Value",
             title=f"Label Smoothing Sensitivity on {self.dataset.title()} (hidden: {hidden_layers})",
-            save_path=f"{part3_path}/label_smoothing_sensitivity.png"
+            save_path=f"{part3_path}/label_smoothing_sensitivity.png",
+            colors=['#1f77b4', '#ff7f0e']  # blue for Val Loss, orange for Gen Gap
         )
 
     # augmentation sensitivity
@@ -455,7 +467,8 @@ def targeted_regularization(
         xlabel=f"{'Noise STD' if aug_method == 'gaussian' else 'Mask Probability'}",
         ylabel="Metric Value",
         title=f"Augmentation Sensitivity on {self.dataset.title()} (hidden: {hidden_layers})",
-        save_path=f"{part3_path}/augmentation_sensitivity.png"
+        save_path=f"{part3_path}/augmentation_sensitivity.png",
+        colors=['#1f77b4', '#ff7f0e']  # blue for Val Loss, orange for Gen Gap
     )
 
     # combined sensitivity plot for quick comparison
@@ -498,7 +511,7 @@ def targeted_regularization(
         linestyles=['-'] * len(val_loss_data)
     )
     
-    # plot generalization gap sensitivity
+    # plot generalization gap sensitivity (using distinct colors for each regularization)
     plot_curve(
         x=gen_gap_x,
         y_list=gen_gap_data,
@@ -527,8 +540,8 @@ def targeted_regularization(
             # no data for this kind, use zeros
             all_mean_curves.append(np.zeros(max_len))
     
-    # create common x-axis
-    x_vals = np.arange(max_len)
+    # create common x-axis scaled by eval_interval
+    x_vals = np.arange(max_len) * eval_interval
     
     plot_curve(
         x=x_vals,
@@ -574,13 +587,13 @@ def targeted_regularization(
         table_str += f"\nDropout probability: {best_dropout:.6f}"
         if self.method == 'classification':
             table_str += f"\nLabel smoothing alpha: {best_smooth:.6f}"
-        table_str += f"\nAugmentation ({aug_method}): {best_aug_param:.6f}"
+            table_str += f"\nAugmentation ({aug_method}): {best_aug_param:.6f}"
 
-    print("\nRegularization Results Summary:")
+    print(f"\n{'='*70}")
+    print("[TR] Regularization Results Summary")
+    print(f"{'='*70}")
     print(table_str)
-    self.ml_logger.log_metric('regularization_table', table_str)
-
-    # integrate best recipe: combine top regularizers and evaluate
+    self.ml_logger.log_metric('regularization_table', table_str)    # integrate best recipe: combine top regularizers and evaluate
     combined_kw = {
         'weight_decay': best_l2, 
         'dropout_p': best_dropout, 
@@ -628,7 +641,7 @@ def targeted_regularization(
         
         # use max length for x-axis to ensure alignment
         max_len = max(len(curve) for curve in plot_data)
-        x = np.arange(max_len)
+        x = np.arange(max_len) * eval_interval
         
         # debug: print curve statistics
         print(f"\nCombined Recipe Comparison Debug:")
@@ -645,20 +658,9 @@ def targeted_regularization(
             xlabel="Updates",
             ylabel="Validation Loss",
             title=f"Combined Recipe vs Best Individual on {self.dataset.title()}",
-            save_path=f"{part3_path}/combined_recipe_comparison_dotted.png",
-            colors=['#000000', '#1f77b4', '#ff7f0e', '#d62728'][:len(comparison_kinds)],
-            linestyles=['-', '--', '-.', ':'][:len(comparison_kinds)]  # use different linestyles to distinguish overlapping curves
-        )
-
-        plot_curve(
-            x=x,
-            y_list=plot_data,
-            labels=comparison_kinds,
-            xlabel="Updates",
-            ylabel="Validation Loss",
-            title=f"Combined Recipe vs Best Individual on {self.dataset.title()}",
             save_path=f"{part3_path}/combined_recipe_comparison.png",
             colors=['#000000', '#1f77b4', '#ff7f0e', '#d62728'][:len(comparison_kinds)],
+            linestyles=['-', '--', '-.', ':'][:len(comparison_kinds)]  # use different linestyles to distinguish overlapping curves
         )
         
         # log combined recipe performance

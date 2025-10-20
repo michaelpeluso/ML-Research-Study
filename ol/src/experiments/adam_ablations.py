@@ -24,6 +24,9 @@ def adam_ablations(
     
     function_start = time.perf_counter()
     
+    eval_interval = 25
+    log_interval = 100
+    
     hidden_layers = self.best_params.get('hidden_layer_sizes', [128, 64])
     part2_path = f"{self.save_path}/{os.path.splitext(os.path.basename(__file__))[0]}"
     os.makedirs(part2_path, exist_ok=True)
@@ -85,7 +88,9 @@ def adam_ablations(
         if opt is None:
             return None
         curves, _, steps_to_l, wall_time, final_train_loss = train_to_budget(
-            local_model, opt, train_loader, val_loader, max_updates, learning_threshold, loss_fn, self.device, 
+            local_model, opt, train_loader, val_loader, max_updates, learning_threshold, loss_fn, self.device,
+            log_interval=log_interval,
+            eval_interval=eval_interval,
             optimizer_name=kind
         )
         test_metric = eval_loss(local_model, test_loader, loss_fn, self.device)
@@ -99,8 +104,9 @@ def adam_ablations(
             if not curves_list:
                 continue
             mean_curve = np.median(curves_list, axis=0)
-            std_curve = np.std(curves_list, axis=0)
-            updates = np.arange(1, len(mean_curve) + 1) * 100            
+            q1_curve = np.percentile(curves_list, 25, axis=0)
+            q3_curve = np.percentile(curves_list, 75, axis=0)
+            updates = np.arange(1, len(mean_curve) + 1) * eval_interval
             label = f'{kind} Median (Optimized)' if optimized else f'{kind} Median (Baseline)'
             prefix = "_optimized" if optimized else "_baseline"
             filename = f"{kind}_curve{prefix}.png"
@@ -114,15 +120,16 @@ def adam_ablations(
                 title=f"{'Optimized ' if optimized else ''}Loss Curve for {kind} on {self.dataset.title()} (hidden: {hidden_layers})",
                 save_path=f"{part2_path}/{filename}",
                 colors=[colors[i]],
-                std=std_curve,
-                band_label='± Std Dev'
+                lower=q1_curve,
+                upper=q3_curve,
+                band_label='IQR'
             )
         
         # combined cumulative curves
         all_mean_curves = [np.median(data_dict[kind]['curves'], axis=0) 
                           for kind in kinds if data_dict[kind]['curves']]
         # create x-axis list based on each curve's length
-        all_updates = [np.arange(1, len(curve) + 1) * 100 for curve in all_mean_curves]
+        all_updates = [np.arange(1, len(curve) + 1) * eval_interval for curve in all_mean_curves]
 
         linestyles = ['-',  '-.','--', '-', ':', '--', ':']  # solid, dashed, dashdot, dotted
         title_prefix = "Optimized" if optimized else "Baseline"
@@ -136,18 +143,6 @@ def adam_ablations(
             ylabel="Validation Loss",
             title=f"{title_prefix} Cumulative Optimizer Loss Curves on {self.dataset.title()} (hidden: {hidden_layers})",
             save_path=f"{part2_path}/cumulative_{title_prefix.lower()}_loss_curves_dotted.png"
-        )
-
-        plot_curve(
-            x=all_updates,
-            y_list=all_mean_curves,
-            labels=[k for k in kinds if data_dict[k]['curves']],
-            colors=[colors[i] for i, k in enumerate(kinds) if data_dict[k]['curves']],
-            linestyles=[linestyles[i] for i, k in enumerate(kinds) if data_dict[k]['curves']],
-            xlabel="Updates",
-            ylabel="Validation Loss",
-            title=f"{title_prefix} Cumulative Optimizer Loss Curves on {self.dataset.title()} (hidden: {hidden_layers})",
-            save_path=f"{part2_path}/cumulative_{title_prefix.lower()}_loss_curves.png"
         )
     
     # baseline runs: default hyperparameters
@@ -204,16 +199,14 @@ def adam_ablations(
     colors_list = ['#1f77b4', '#2ca02c', '#d62728', '#9467bd', '#ff7f0e', '#17becf', '#000000']
     plot_optimizer_curves(all_data, kinds, colors_list, suffix="", optimized=False)
 
-    # sensitivity analysis: adam-family hyperparameter grids
-    alpha_grid = [1e-5, 1e-4, 1e-3]
-    beta1_grid = [0.85, 0.9, 0.99]
-    beta2_grid = [0.99, 0.999, 0.9999]
-    default_b2 = 0.999
+    alpha_grid = [1e-4, 1e-3, 1e-2, 1e-1]
+    beta1_grid = [0.8, 0.9, 0.95, 0.99]
+    beta2_grid = [0.99, 0.995, 0.999, 0.9999]
     default_b1 = 0.9
+    default_b2 = 0.999
     data_dict = {}
     seed = seeds[0]
 
-    # log sensitivity grid configurations
     self.ml_logger.log_metric('sensitivity_alpha_grid', str(alpha_grid))
     self.ml_logger.log_metric('sensitivity_beta1_grid', str(beta1_grid))
     self.ml_logger.log_metric('sensitivity_beta2_grid', str(beta2_grid))
@@ -361,11 +354,11 @@ def adam_ablations(
         max_updates = max(len(f"{upd:.0f} ± {std:.0f}") for _, _, _, _, _, _, upd, std in summary_table)
         max_gen_gap = max(len(f"{gap:.4f}") for _, _, _, _, _, gap, _, _ in summary_table)
 
-        table_str = (f"| {'Optimizer':<{max_opt_name}} | {'Best Val Loss':>{max_val_loss}} | "
+        table_str = (f"| {'Optimizer':<{max_opt_name}} | {'Val Loss at Budget':>{max_val_loss}} | "
                     f"{'Test Metric':>{max_test_metric}} | {'Gen Gap':>{max_gen_gap}} | "
                     f"{'Time to ℓ (s)':>{max_time_to_l}} | "
                     f"{'# Grad Evals':>{max_grad_evals}} | {'# Func Evals':>{max_func_evals}} | "
-                    f"{'Updates':>{max_updates}} |\n")
+                    f"{'Steps to ℓ':>{max_updates}} |\n")
         table_str += (f"|{'-' * (max_opt_name + 2)}|{'-' * (max_val_loss + 2)}|"
                     f"{'-' * (max_test_metric + 2)}|{'-' * (max_gen_gap + 2)}|"
                     f"{'-' * (max_time_to_l + 2)}|"
@@ -386,6 +379,9 @@ def adam_ablations(
                         f"{avg_grad_evals:.0f} ± {std_grad_evals:.0f} | {avg_func_evals:.0f} ± {std_func_evals:.0f} | "
                         f"{avg_steps:.0f} ± {std_steps:.0f} |\n")
 
+    print(f"\n{'='*70}")
+    print("[Adam Ablations] Optimizer Comparison Summary")
+    print(f"{'='*70}")
     print(table_str)
     self.ml_logger.log_metric('part2_table', table_str)
     

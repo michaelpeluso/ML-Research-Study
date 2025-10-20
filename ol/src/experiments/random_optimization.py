@@ -111,8 +111,10 @@ def random_optimization(self, max_param: int = 50000, max_evals: int = 10000, pl
             
             best_so_far = np.minimum.accumulate(np.array(losses)).tolist()
             
-            # Evaluate on test set
+            # Evaluate on test set and train set
             test_loss = validation_objective(get_trainable_params(optimized_model), optimized_model, test_loader, loss_fn, self.device)
+            train_loss = validation_objective(get_trainable_params(optimized_model), optimized_model, train_loader, loss_fn, self.device)
+            gen_gap = test_loss - train_loss
             
             # Store results for this seed
             algo_results[algo.__name__][seed] = {
@@ -120,11 +122,15 @@ def random_optimization(self, max_param: int = 50000, max_evals: int = 10000, pl
                 'losses': losses,
                 'best_so_far': best_so_far,
                 'test_loss': test_loss,
+                'train_loss': train_loss,
+                'gen_gap': gen_gap,
                 'final_val_loss': best_so_far[-1]
             }
             
             # Log per-seed metrics
             self.ml_logger.log_metric(f"{algo.__name__}_seed_{seed}_test_loss", test_loss)
+            self.ml_logger.log_metric(f"{algo.__name__}_seed_{seed}_train_loss", train_loss)
+            self.ml_logger.log_metric(f"{algo.__name__}_seed_{seed}_gen_gap", gen_gap)
             self.ml_logger.log_metric(f"{algo.__name__}_seed_{seed}_final_val_loss", best_so_far[-1])
         
         # Aggregate results across seeds
@@ -165,9 +171,10 @@ def random_optimization(self, max_param: int = 50000, max_evals: int = 10000, pl
         
         interpolated_curves = np.array(interpolated_curves)
         median_curve = np.median(interpolated_curves, axis=0)
-        std_curve = np.std(interpolated_curves, axis=0)
+        q1_curve = np.percentile(interpolated_curves, 25, axis=0)
+        q3_curve = np.percentile(interpolated_curves, 75, axis=0)
         
-        # Plot with stability bands
+        # Plot with stability bands (linear scale)
         plot_curve(
             x=common_evals,
             y_list=[median_curve],
@@ -177,8 +184,25 @@ def random_optimization(self, max_param: int = 50000, max_evals: int = 10000, pl
             title=f"{algo.__name__.upper()} Stability on {self.dataset.title()} dataset (hidden: {hidden_layers})",
             save_path=f"{part1_path}/{algo.__name__}_stability.png",
             colors=[colors_list[i]],
-            std=std_curve,
-            band_label='± Std Dev'
+            lower=q1_curve,
+            upper=q3_curve,
+            band_label='IQR'
+        )
+        
+        # Plot with stability bands (log scale)
+        plot_curve(
+            x=common_evals,
+            y_list=[median_curve],
+            labels=[f"{algo.__name__.upper()} Median (n={len(seeds)})"],
+            xlabel="Function Evaluations (log scale)",
+            ylabel="Validation Loss (Best-so-Far)",
+            title=f"{algo.__name__.upper()} Stability on {self.dataset.title()} dataset (hidden: {hidden_layers})",
+            save_path=f"{part1_path}/{algo.__name__}_stability_log.png",
+            colors=[colors_list[i]],
+            lower=q1_curve,
+            upper=q3_curve,
+            band_label='IQR',
+            xscale='log'
         )
 
     # Combined comparison plot: median curves for all algorithms
@@ -213,11 +237,21 @@ def random_optimization(self, max_param: int = 50000, max_evals: int = 10000, pl
         labels_combined.append(f"{algo_name.upper()} Median")
         colors_combined.append(colors_list[i])
     
+    # Combined comparison plot (linear scale)
     plot_curve(
         x_combined, y_combined, labels=labels_combined, colors=colors_combined,
         xlabel="Function Evaluations", ylabel="Validation Loss (Best-so-Far)",
         title=f"RO Algorithms Comparison on {self.dataset.title()} dataset (hidden: {hidden_layers})",
         save_path=f"{part1_path}/combined_comparison.png"
+    )
+    
+    # Combined comparison plot (log scale)
+    plot_curve(
+        x_combined, y_combined, labels=labels_combined, colors=colors_combined,
+        xlabel="Function Evaluations (log scale)", ylabel="Validation Loss (Best-so-Far)",
+        title=f"RO Algorithms Comparison on {self.dataset.title()} dataset (hidden: {hidden_layers})",
+        save_path=f"{part1_path}/combined_comparison_log.png",
+        xscale='log'
     )
 
     # Log summary table with statistics
@@ -225,18 +259,26 @@ def random_optimization(self, max_param: int = 50000, max_evals: int = 10000, pl
     print(f"[RO] Summary Statistics")
     print(f"{'='*70}")
     
-    table_str = "| Algorithm | Final Val Loss (Mean ± Std) | Test Loss (Mean ± Std) | Seeds |\n"
-    table_str += "|-----------|------------------------------|------------------------|-------|\n"
+    table_str = "| Algorithm | Val Loss (Mean ± Std) | Test Loss (Mean ± Std) | Gen Gap (Mean ± Std) | Budget (Func Evals) | Seeds |\n"
+    table_str += "|-----------|------------------------|------------------------|----------------------|---------------------|-------|\n"
     for algo_name in algo_results.keys():
         if len(algo_results[algo_name]) == 0:
             continue
         final_val_losses = [algo_results[algo_name][s]['final_val_loss'] for s in algo_results[algo_name]]
         test_losses_list = [algo_results[algo_name][s]['test_loss'] for s in algo_results[algo_name]]
+        gen_gaps_list = [algo_results[algo_name][s]['gen_gap'] for s in algo_results[algo_name]]
+        evals_used = [len(algo_results[algo_name][s]['evals']) for s in algo_results[algo_name]]
+        
         mean_val = np.mean(final_val_losses)
         std_val = np.std(final_val_losses)
         mean_test = np.mean(test_losses_list)
         std_test = np.std(test_losses_list)
-        table_str += f"| {algo_name.upper()} | {mean_val:.6f} ± {std_val:.6f} | {mean_test:.6f} ± {std_test:.6f} | {len(algo_results[algo_name])} |\n"
+        mean_gen_gap = np.mean(gen_gaps_list)
+        std_gen_gap = np.std(gen_gaps_list)
+        mean_evals = np.mean(evals_used)
+        std_evals = np.std(evals_used)
+        
+        table_str += f"| {algo_name.upper()} | {mean_val:.6f} ± {std_val:.6f} | {mean_test:.6f} ± {std_test:.6f} | {mean_gen_gap:.6f} ± {std_gen_gap:.6f} | {mean_evals:.0f} ± {std_evals:.0f} | {len(algo_results[algo_name])} |\n"
     
     print(f"\nRO Summary Statistics:\n{table_str}")
     self.ml_logger.log_metric('ro_summary_table', table_str)

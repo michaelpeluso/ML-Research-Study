@@ -356,7 +356,11 @@ def ga(
             'crossover_rate': crossover_rate,
             'plateau_threshold': plateau_threshold,
             'min_delta': min_delta,
-            'initial_fitness': min(fitness)
+            'initial_fitness': min(fitness),
+            'selection_method': 'top-k (elitist, top 50%)',
+            'crossover_method': 'single-point at random position',
+            'mutation_method': 'gaussian noise N(0, mutation_std)',
+            'elitism': True
         })
 
         last_improvement_eval = evals

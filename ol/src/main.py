@@ -6,15 +6,16 @@ if script_dir not in sys.path: sys.path.insert(0, script_dir)
 os.environ['ROOT'] = os.path.dirname(script_dir)
 
 from experiment import Experiment
+from experiments.compare_performance import generate_comparison_report
 
 
 def main():
 
     # L2 testing
     testing = False
-    subsample = 0.1 if testing else 0.1
+    subsample = 0.1 if testing else None
     seeds = [42] if testing else [42, 4242, 424242]
-    max_evals = 500 if testing else 500
+    max_evals = 500 if testing else 3000
 
     # experiment flags
     run_random_optimization = True
@@ -29,9 +30,10 @@ def main():
             'method': "classification",
             'subsample': subsample or 1.0,
             'batch_size': 64,
+            'learning_threshold': 0.55,
             'backbone_configs': [
-                {'name': 'nn_2', 'max_iter': 15, 'learning_rate_init': 0.05, 'hidden_layer_sizes': (256, 128), 'alpha': 1e-05, 'activation': 'tanh'},  # shallow: 2 layers
-                {'name': 'nn_4', 'max_iter': 15, 'learning_rate_init': 0.05, 'hidden_layer_sizes': (256, 256, 128, 128), 'alpha': 1e-05, 'activation': 'tanh'}  # deep: 4 layers
+                {'name': 'nn_2', 'max_iter': 15, 'learning_rate_init': 0.05, 'hidden_layer_sizes': (256, 128), 'alpha': 1e-05, 'activation': 'tanh'},
+                {'name': 'nn_4', 'max_iter': 15, 'learning_rate_init': 0.05, 'hidden_layer_sizes': (256, 256, 128, 128), 'alpha': 1e-05, 'activation': 'tanh'}
             ]
         },
         {
@@ -40,9 +42,10 @@ def main():
             'method': "regression",
             'subsample': subsample or 0.8,  # > 80%
             'batch_size': 1024,
+            'learning_threshold': 10.0,
             'backbone_configs': [
-                {'name': 'nn_2', 'max_iter': 5, 'learning_rate_init': 0.01, 'hidden_layer_sizes': (256, 128), 'alpha': 0.001, 'activation': 'relu'},  # shallow: 2 layers
-                {'name': 'nn_4', 'max_iter': 5, 'learning_rate_init': 0.01, 'hidden_layer_sizes': (256, 256, 128, 128), 'alpha': 0.001, 'activation': 'relu'}  # deep: 4 layers
+                {'name': 'nn_2', 'max_iter': 5, 'learning_rate_init': 0.01, 'hidden_layer_sizes': (256, 128), 'alpha': 0.001, 'activation': 'relu'},
+                {'name': 'nn_4', 'max_iter': 5, 'learning_rate_init': 0.01, 'hidden_layer_sizes': (256, 256, 128, 128), 'alpha': 0.001, 'activation': 'relu'}
             ]
         }
     ]
@@ -77,7 +80,7 @@ def main():
             if run_adam_ablations:
                 params = exp.run_adam_ablations(
                     max_updates=max_evals, 
-                    learning_threshold=0.5, 
+                    learning_threshold=exp_config['learning_threshold'], 
                     learning_rate=backbone['alpha'], 
                     seeds=seeds
                 )
@@ -94,6 +97,13 @@ def main():
                     betas=adam_betas,
                     seeds=seeds
                 )
+            
+            generate_comparison_report(
+                exp=exp,
+                architecture=backbone['name'],
+                seeds=seeds,
+                quick=testing
+            )
 
 
 if __name__ == "__main__":
