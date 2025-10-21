@@ -235,3 +235,44 @@ def plot_combined_heatmap(
     else:
         plt.show()
     plt.close()
+
+
+def plot_sensitivity_subplots(
+    sensitivity_data: List[Dict[str, Any]],
+    overall_title: str,
+    save_path: str,
+    figsize: tuple = (15, 10),
+    dpi: int = 150
+):
+    num_plots = len(sensitivity_data)    
+    n_cols = min(3, num_plots)
+    n_rows = (num_plots + n_cols - 1) // n_cols  
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
+    
+    # Handle single subplot case
+    if num_plots == 1:
+        axes = np.array([axes])
+    axes = axes.flatten()
+    
+    # Plot each sensitivity analysis
+    for i, data in enumerate(sensitivity_data):
+        ax = axes[i]
+        color = data.get('color', f'C{i}')
+        
+        ax.plot(data['x'], data['y'], 'o-', color=color, linewidth=2, markersize=6)
+        ax.set_xlabel(data['xlabel'], fontsize=10)
+        ax.set_ylabel('Validation Loss', fontsize=10)
+        ax.set_title(data['title'], fontsize=11, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+    
+    # Hide unused subplots
+    for i in range(num_plots, len(axes)):
+        axes[i].axis('off')
+    
+    # Add overall title
+    plt.suptitle(overall_title, fontsize=14, fontweight='bold', y=0.995)
+    plt.tight_layout(rect=(0, 0, 1, 0.99))
+    plt.savefig(save_path, dpi=dpi, bbox_inches='tight')
+    plt.close()
+    
+    print(f"\nSaved sensitivity subplots to: {save_path}")

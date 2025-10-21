@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import time
+from typing import Dict, Tuple
 
 from utils.plotter import plot_curve
 from core.models import MLP, set_seed
@@ -10,18 +11,19 @@ from core.random_optimizers import rhc, sa, ga, validation_objective, get_traina
 from core.training import print_experiment_config
 
 
-def random_optimization(self, max_param: int = 50000, max_evals: int = 10000, plateau_threshold: int = 250, seeds: list = [42]):
+def random_optimization(self, max_param: int = 50000, max_evals: int = 10000, plateau_threshold: int = 250, seeds: list = [42], train_loader=None, val_loader=None, test_loader=None) -> Dict:
     '''
     Run Part 1 RO: freeze model, run rhc/sa/ga, log history for analysis, generate report,
     and plot curves including best-so-far objective vs. evals.
     '''
     function_start = time.perf_counter()
     
+    if train_loader is None:
+        train_loader, val_loader, test_loader = self.get_data()
+    
     hidden_layers = self.best_params.get('hidden_layer_sizes', [128, 64])
     part1_path = f"{self.save_path}/{os.path.splitext(os.path.basename(__file__))[0]}"
     os.makedirs(part1_path, exist_ok=True)
-
-    train_loader, val_loader, test_loader = self.get_data()
 
     # Model initialization
     in_dim = train_loader.dataset.tensors[0].shape[1]  # get feature count from first batch
@@ -54,8 +56,8 @@ def random_optimization(self, max_param: int = 50000, max_evals: int = 10000, pl
         max_updates=max_evals,
         l_threshold=0.0,  # N/A for random optimization
         train_loader=train_loader,
-        val_loader=val_loader,
-        test_loader=test_loader,
+        val_loader=val_loader, #type:ignore
+        test_loader=test_loader, #type:ignore
         model=model,
         max_param=max_param,
         plateau_threshold=plateau_threshold,
@@ -94,7 +96,7 @@ def random_optimization(self, max_param: int = 50000, max_evals: int = 10000, pl
             
             optimized_model, history = algo(
                 model=seed_model,
-                val_loader=val_loader,
+                val_loader=val_loader, #type:ignore
                 loss_fn=loss_fn,
                 device=self.device,
                 max_evals=max_evals,
@@ -112,7 +114,7 @@ def random_optimization(self, max_param: int = 50000, max_evals: int = 10000, pl
             best_so_far = np.minimum.accumulate(np.array(losses)).tolist()
             
             # Evaluate on test set and train set
-            test_loss = validation_objective(get_trainable_params(optimized_model), optimized_model, test_loader, loss_fn, self.device)
+            test_loss = validation_objective(get_trainable_params(optimized_model), optimized_model, test_loader, loss_fn, self.device) #type:ignore
             train_loss = validation_objective(get_trainable_params(optimized_model), optimized_model, train_loader, loss_fn, self.device)
             gen_gap = test_loss - train_loss
             
@@ -204,12 +206,7 @@ def random_optimization(self, max_param: int = 50000, max_evals: int = 10000, pl
             band_label='IQR',
             xscale='log'
         )
-
-    # Combined comparison plot: median curves for all algorithms
-    print(f"\n{'='*70}")
-    print(f"[RO] Generating combined comparison plot")
-    print(f"{'='*70}")
-    
+ 
     x_combined = []
     y_combined = []
     labels_combined = []
@@ -237,7 +234,6 @@ def random_optimization(self, max_param: int = 50000, max_evals: int = 10000, pl
         labels_combined.append(f"{algo_name.upper()} Median")
         colors_combined.append(colors_list[i])
     
-    # Combined comparison plot (linear scale)
     plot_curve(
         x_combined, y_combined, labels=labels_combined, colors=colors_combined,
         xlabel="Function Evaluations", ylabel="Validation Loss (Best-so-Far)",
@@ -255,10 +251,6 @@ def random_optimization(self, max_param: int = 50000, max_evals: int = 10000, pl
     )
 
     # Log summary table with statistics
-    print(f"\n{'='*70}")
-    print(f"[RO] Summary Statistics")
-    print(f"{'='*70}")
-    
     table_str = "| Algorithm | Val Loss (Mean ± Std) | Test Loss (Mean ± Std) | Gen Gap (Mean ± Std) | Budget (Func Evals) | Seeds |\n"
     table_str += "|-----------|------------------------|------------------------|----------------------|---------------------|-------|\n"
     for algo_name in algo_results.keys():
@@ -289,4 +281,27 @@ def random_optimization(self, max_param: int = 50000, max_evals: int = 10000, pl
     print(f"\n[Random Optimization] Total execution time: {function_elapsed:.2f}s")
 
     # Generate report
-    self.ml_logger.generate_log_report(output_file=f"{part1_path}/part1_report.txt", part=1)
+    self.ml_logger.generate_log_report(output_file=f"{part1_path}/execution_report.txt", part=1)
+    
+    # Return summary results for comparison report
+    summary_results = {}
+    for algo_name in algo_results.keys():
+        if len(algo_results[algo_name]) == 0:
+            continue
+        final_val_losses = [algo_results[algo_name][s]['final_val_loss'] for s in algo_results[algo_name]]
+        test_losses_list = [algo_results[algo_name][s]['test_loss'] for s in algo_results[algo_name]]
+        gen_gaps_list = [algo_results[algo_name][s]['gen_gap'] for s in algo_results[algo_name]]
+        
+        summary_results[algo_name] = {
+            'mean_val': np.mean(final_val_losses),
+            'std_val': np.std(final_val_losses),
+            'mean_test': np.mean(test_losses_list),
+            'std_test': np.std(test_losses_list),
+            'mean_gen_gap': np.mean(gen_gaps_list),
+            'std_gen_gap': np.std(gen_gaps_list),
+        }
+    
+    # Add total execution time to summary
+    summary_results['_execution_time'] = function_elapsed
+    
+    return summary_results

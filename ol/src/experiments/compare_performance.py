@@ -1,20 +1,4 @@
-"""
-Performance Comparison Script
-==============================
-Compares three key stages to show accuracy progression:
-1. PyTorch Default Parameters (baseline)
-2. Tuned Backbone (from main.py - no optimization)
-3. Individual Optimizations (Parts 1, 2, 3 - best from each)
-
-This shows the incremental improvement at each stage.
-
-Usage:
-    python compare_performance.py --dataset hotels --seeds 42,4242,424242
-    python compare_performance.py --dataset accidents --quick
-"""
-
 import os
-import sys
 import time
 import argparse
 import json
@@ -654,8 +638,7 @@ def main_comparison():
 # CALLABLE FUNCTION FOR main.py
 # =============================================================================
 
-def generate_comparison_report(exp, architecture: str, seeds: List[int] = [42, 4242, 424242],
-                               quick: bool = False):
+def generate_comparison_report(exp, architecture: str, seeds: List[int] = [42, 4242, 424242], ro_results=None, adam_results=None, reg_results=None):
     """
     Generate comparison report for a single experiment/architecture combination.
     Called from main.py to create reports in figures/{dataset}/{architecture}/
@@ -663,184 +646,77 @@ def generate_comparison_report(exp, architecture: str, seeds: List[int] = [42, 4
     dataset = exp.dataset
     save_path = exp.save_path
     os.makedirs(save_path, exist_ok=True)
-    max_evals = 1000 if quick else 10000
     
     print(f"\n{'='*100}")
     print(f"GENERATING COMPARISON REPORT: {dataset.upper()} - {architecture}")
     print(f"{'='*100}")
     
-    # Get data loaders
-    train_loader, val_loader, test_loader = exp.get_data()
-    in_dim = train_loader.dataset.tensors[0].shape[1]
-    out_dim = len(train_loader.dataset.tensors[1].unique()) if exp.method == 'classification' else 1
-    
-    # Get tuned parameters for this dataset/architecture
-    params = TUNED_PARAMS[dataset][architecture]
-    loss_fn = nn.CrossEntropyLoss() if exp.method == 'classification' else nn.MSELoss()
-    device = exp.device
-    method = exp.method
-    
     all_results = {}
     
-    # Stage 1: PyTorch Defaults
-    print(f"\nStage 1: PyTorch Defaults")
-    seed_results = []
-    for seed in seeds:
-        set_seed(seed)
-        model = MLP(in_dim=in_dim, hidden=params['hidden_layers'], out_dim=out_dim, 
-                   activation='relu').to(device)
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-        train_simple(model, train_loader, val_loader, loss_fn, optimizer, 15, device)
-        
-        val_loss = eval_loss(model, val_loader, loss_fn, device)
-        test_loss = eval_loss(model, test_loader, loss_fn, device)
-        seed_results.append({'val': val_loss, 'test': test_loss})
-        print(f"  Seed {seed}: Val={val_loss:.6f}, Test={test_loss:.6f}")
-    
-    all_results['stage1_defaults'] = {
-        'mean_val': np.mean([r['val'] for r in seed_results]),
-        'std_val': np.std([r['val'] for r in seed_results]),
-        'mean_test': np.mean([r['test'] for r in seed_results]),
-        'std_test': np.std([r['test'] for r in seed_results]),
-    }
-    
-    # Stage 2: Tuned Backbone
-    print(f"\nStage 2: Tuned Backbone")
-    seed_results = []
-    for seed in seeds:
-        set_seed(seed)
-        model = MLP(in_dim=in_dim, hidden=params['hidden_layers'], out_dim=out_dim,
-                   activation=params['activation']).to(device)
-        optimizer = torch.optim.Adam(model.parameters(), lr=params['learning_rate'],
-                                     weight_decay=params['weight_decay'])
-        train_simple(model, train_loader, val_loader, loss_fn, optimizer, 
-                    params['max_iter'], device)
-        
-        val_loss = eval_loss(model, val_loader, loss_fn, device)
-        test_loss = eval_loss(model, test_loader, loss_fn, device)
-        seed_results.append({'val': val_loss, 'test': test_loss})
-        print(f"  Seed {seed}: Val={val_loss:.6f}, Test={test_loss:.6f}")
-    
-    all_results['stage2_tuned'] = {
-        'mean_val': np.mean([r['val'] for r in seed_results]),
-        'std_val': np.std([r['val'] for r in seed_results]),
-        'mean_test': np.mean([r['test'] for r in seed_results]),
-        'std_test': np.std([r['test'] for r in seed_results]),
-    }
-    
-    # Stage 3a: Random Optimization
-    print(f"\nStage 3a: Random Optimization")
-    algo_results = {}
-    for algo_name, algo_fn, algo_params in [
-        ('RHC', rhc, {'restarts': 5, 'max_evals': max_evals, 'initial_perturb_scale': 0.1,
-                      'decay_rate': 0.995, 'plateau_threshold': 250}),
-        ('SA', sa, {'max_evals': max_evals, 'initial_temp': 0.1, 'min_temp': 0.001,
-                    'cooling_rate': 0.003, 'initial_perturb_scale': 0.1,
-                    'perturb_decay': 0.995, 'plateau_threshold': 500}),
-        ('GA', ga, {'max_evals': max_evals, 'pop_size': 20, 'mutation_rate': 0.1,
-                    'mutation_std': 0.01, 'plateau_threshold': 250})
-    ]:
-        seed_results = []
-        for seed in seeds:
-            set_seed(seed)
-            model = MLP(in_dim=in_dim, hidden=params['hidden_layers'], out_dim=out_dim,
-                       activation=params['activation']).to(device)
-            optimizer = torch.optim.Adam(model.parameters(), lr=params['learning_rate'],
-                                         weight_decay=params['weight_decay'])
-            train_simple(model, train_loader, val_loader, loss_fn, optimizer,
-                        params['max_iter'], device)
-            
-            model.freeze_all_but_last_k(k=1, limit=50000)
-            optimized_model, history = algo_fn(model, val_loader, loss_fn, device, **algo_params)
-            test_loss = eval_loss(optimized_model, test_loader, loss_fn, device)
-            seed_results.append(test_loss)
-        
-        algo_results[algo_name] = {
-            'mean_test': np.mean(seed_results),
-            'std_test': np.std(seed_results)
+    # Stage 3a: Random Optimization (use passed results)
+    if ro_results:
+        print(f"\nStage 3a: Random Optimization (from experiment results)")
+        algo_results_only = {k: v for k, v in ro_results.items() if not k.startswith('_')}
+        best_algo = min(algo_results_only.items(), key=lambda x: x[1]['mean_test'])
+        all_results['stage3_part1_ro'] = {
+            'best_algo': best_algo[0],
+            'mean_test': best_algo[1]['mean_test'],
+            'std_test': best_algo[1]['std_test'],
+            'all_algos': algo_results_only
         }
-        print(f"  {algo_name}: Test={algo_results[algo_name]['mean_test']:.6f}±{algo_results[algo_name]['std_test']:.6f}")
-    
-    best_algo = min(algo_results.items(), key=lambda x: x[1]['mean_test'])
-    all_results['stage3_part1_ro'] = {
-        'best_algo': best_algo[0],
-        'mean_test': best_algo[1]['mean_test'],
-        'std_test': best_algo[1]['std_test'],
-        'all_algos': algo_results
-    }
-    
-    # Stage 3b: Adam Ablations
-    print(f"\nStage 3b: Adam Ablations")
-    opt_results = {}
-    for opt_name, opt_fn in [
-        ('Adam', lambda p, lr: torch.optim.Adam(p, lr=lr)),
-        ('AdamW', lambda p, lr: torch.optim.AdamW(p, lr=lr, weight_decay=0.01)),
-        ('SGD+Momentum', lambda p, lr: torch.optim.SGD(p, lr=lr, momentum=0.9)),
-    ]:
-        seed_results = []
-        for seed in seeds:
-            set_seed(seed)
-            model = MLP(in_dim=in_dim, hidden=params['hidden_layers'], out_dim=out_dim,
-                       activation=params['activation']).to(device)
-            optimizer = opt_fn(model.parameters(), params['learning_rate'])
-            train_simple(model, train_loader, val_loader, loss_fn, optimizer,
-                        params['max_iter'], device)
-            test_loss = eval_loss(model, test_loader, loss_fn, device)
-            seed_results.append(test_loss)
-        
-        opt_results[opt_name] = {
-            'mean_test': np.mean(seed_results),
-            'std_test': np.std(seed_results)
+        print(f"  Best Algorithm: {best_algo[0]} - Test: {best_algo[1]['mean_test']:.6f} ± {best_algo[1]['std_test']:.6f}")
+    else:
+        print(f"\nStage 3a: Random Optimization (skipped - no results)")
+        all_results['stage3_part1_ro'] = {
+            'best_algo': 'N/A',
+            'mean_test': 0.0,
+            'std_test': 0.0,
+            'all_algos': {}
         }
-        print(f"  {opt_name}: Test={opt_results[opt_name]['mean_test']:.6f}±{opt_results[opt_name]['std_test']:.6f}")
     
-    best_opt = min(opt_results.items(), key=lambda x: x[1]['mean_test'])
-    all_results['stage3_part2_adam'] = {
-        'best_optimizer': best_opt[0],
-        'mean_test': best_opt[1]['mean_test'],
-        'std_test': best_opt[1]['std_test'],
-        'all_optimizers': opt_results
-    }
-    
-    # Stage 3c: Regularization
-    print(f"\nStage 3c: Targeted Regularization")
-    reg_results = {}
-    for config_name, config in [
-        ('No Reg', {}),
-        ('L2 (0.001)', {'weight_decay': 0.001}),
-        ('Dropout (0.2)', {'dropout': 0.2}),
-    ]:
-        seed_results = []
-        for seed in seeds:
-            set_seed(seed)
-            if 'dropout' in config:
-                model = MLP(in_dim=in_dim, hidden=params['hidden_layers'], out_dim=out_dim,
-                           activation=params['activation'], dropout_p=config['dropout']).to(device)
-            else:
-                model = MLP(in_dim=in_dim, hidden=params['hidden_layers'], out_dim=out_dim,
-                           activation=params['activation']).to(device)
-            
-            wd = config.get('weight_decay', params['weight_decay'])
-            optimizer = torch.optim.Adam(model.parameters(), lr=params['learning_rate'],
-                                        weight_decay=wd)
-            train_simple(model, train_loader, val_loader, loss_fn, optimizer,
-                        params['max_iter'], device)
-            test_loss = eval_loss(model, test_loader, loss_fn, device)
-            seed_results.append(test_loss)
-        
-        reg_results[config_name] = {
-            'mean_test': np.mean(seed_results),
-            'std_test': np.std(seed_results)
+    # Stage 3b: Adam Ablations (use passed results)
+    if adam_results:
+        print(f"\nStage 3b: Adam Ablations (from experiment results)")
+        # Filter out metadata keys like '_execution_time'
+        opt_results_only = {k: v for k, v in adam_results.items() if not k.startswith('_')}
+        best_opt = min(opt_results_only.items(), key=lambda x: x[1]['mean_test'])
+        all_results['stage3_part2_adam'] = {
+            'best_optimizer': best_opt[0],
+            'mean_test': best_opt[1]['mean_test'],
+            'std_test': best_opt[1]['std_test'],
+            'all_optimizers': opt_results_only
         }
-        print(f"  {config_name}: Test={reg_results[config_name]['mean_test']:.6f}±{reg_results[config_name]['std_test']:.6f}")
+        print(f"  Best Optimizer: {best_opt[0]} - Test: {best_opt[1]['mean_test']:.6f} ± {best_opt[1]['std_test']:.6f}")
+    else:
+        print(f"\nStage 3b: Adam Ablations (skipped - no results)")
+        all_results['stage3_part2_adam'] = {
+            'best_optimizer': 'N/A',
+            'mean_test': 0.0,
+            'std_test': 0.0,
+            'all_optimizers': {}
+        }
     
-    best_reg = min(reg_results.items(), key=lambda x: x[1]['mean_test'])
-    all_results['stage3_part3_reg'] = {
-        'best_config': best_reg[0],
-        'mean_test': best_reg[1]['mean_test'],
-        'std_test': best_reg[1]['std_test'],
-        'all_configs': reg_results
-    }
+    # Stage 3c: Targeted Regularization (use passed results)
+    if reg_results:
+        print(f"\nStage 3c: Targeted Regularization (from experiment results)")
+        # Filter out metadata keys like '_execution_time'
+        reg_results_only = {k: v for k, v in reg_results.items() if not k.startswith('_')}
+        best_reg = min(reg_results_only.items(), key=lambda x: x[1]['mean_test'])
+        all_results['stage3_part3_reg'] = {
+            'best_config': best_reg[0],
+            'mean_test': best_reg[1]['mean_test'],
+            'std_test': best_reg[1]['std_test'],
+            'all_configs': reg_results_only
+        }
+        print(f"  Best Config: {best_reg[0]} - Test: {best_reg[1]['mean_test']:.6f} ± {best_reg[1]['std_test']:.6f}")
+    else:
+        print(f"\nStage 3c: Targeted Regularization (skipped - no results)")
+        all_results['stage3_part3_reg'] = {
+            'best_config': 'N/A',
+            'mean_test': 0.0,
+            'std_test': 0.0,
+            'all_configs': {}
+        }
     
     # Save JSON results
     json_path = Path(save_path) / 'comparison_results.json'
@@ -855,47 +731,259 @@ def generate_comparison_report(exp, architecture: str, seeds: List[int] = [42, 4
         f.write("="*100 + "\n")
         f.write(f"Date: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"Seeds: {seeds}\n")
-        f.write(f"Quick Mode: {quick}\n")
         f.write("\n")
         
-        f.write("ACCURACY PROGRESSION SUMMARY\n")
+        f.write("OPTIMIZATION PROGRESSION SUMMARY\n")
         f.write("-"*100 + "\n\n")
         
-        f.write("Stage 1: PyTorch Defaults\n")
-        f.write(f"  Val Loss:  {all_results['stage1_defaults']['mean_val']:.6f} ± {all_results['stage1_defaults']['std_val']:.6f}\n")
-        f.write(f"  Test Loss: {all_results['stage1_defaults']['mean_test']:.6f} ± {all_results['stage1_defaults']['std_test']:.6f}\n\n")
+        baseline_test = None
         
-        f.write("Stage 2: Tuned Backbone\n")
-        f.write(f"  Val Loss:  {all_results['stage2_tuned']['mean_val']:.6f} ± {all_results['stage2_tuned']['std_val']:.6f}\n")
-        f.write(f"  Test Loss: {all_results['stage2_tuned']['mean_test']:.6f} ± {all_results['stage2_tuned']['std_test']:.6f}\n")
-        improvement = ((all_results['stage1_defaults']['mean_test'] - all_results['stage2_tuned']['mean_test']) 
-                      / all_results['stage1_defaults']['mean_test'] * 100)
-        f.write(f"  Improvement: {improvement:.2f}%\n\n")
+        # Stage 3a: Random Optimization
+        if ro_results:
+            f.write("Stage 3a: Random Optimization\n")
+            f.write(f"  Best Algorithm: {all_results['stage3_part1_ro']['best_algo']}\n")
+            f.write(f"  Test Loss: {all_results['stage3_part1_ro']['mean_test']:.6f} ± {all_results['stage3_part1_ro']['std_test']:.6f}\n")
+            
+            # Find worst performer for baseline (filter out metadata)
+            ro_algos = {k: v for k, v in ro_results.items() if not k.startswith('_')}
+            worst_algo = max(ro_algos.items(), key=lambda x: x[1]['mean_test'])
+            baseline_test = worst_algo[1]['mean_test']
+            improvement_abs = baseline_test - all_results['stage3_part1_ro']['mean_test']
+            improvement_pct = (improvement_abs / baseline_test * 100) if baseline_test > 0 else 0
+            f.write(f"  Improvement over worst ({worst_algo[0]}): {improvement_abs:.6f} ({improvement_pct:.2f}%)\n")
+            
+            f.write("  All Algorithms:\n")
+            for algo, result in sorted(ro_algos.items(), key=lambda x: x[1]['mean_test']):
+                f.write(f"    {algo}: Test={result['mean_test']:.6f} ± {result['std_test']:.6f}\n")
+            f.write("\n")
+            
+            # Update baseline for next stage
+            baseline_test = all_results['stage3_part1_ro']['mean_test']
         
-        f.write("Stage 3a: Random Optimization\n")
-        f.write(f"  Best Algorithm: {all_results['stage3_part1_ro']['best_algo']}\n")
-        f.write(f"  Test Loss: {all_results['stage3_part1_ro']['mean_test']:.6f} ± {all_results['stage3_part1_ro']['std_test']:.6f}\n")
-        f.write("  All Algorithms:\n")
-        for algo, result in all_results['stage3_part1_ro']['all_algos'].items():
-            f.write(f"    {algo}: {result['mean_test']:.6f} ± {result['std_test']:.6f}\n")
+        # Stage 3b: Adam Ablations
+        if adam_results:
+            f.write("Stage 3b: Adam Ablations\n")
+            f.write(f"  Best Optimizer: {all_results['stage3_part2_adam']['best_optimizer']}\n")
+            f.write(f"  Test Loss: {all_results['stage3_part2_adam']['mean_test']:.6f} ± {all_results['stage3_part2_adam']['std_test']:.6f}\n")
+            
+            if baseline_test is not None:
+                improvement_abs = baseline_test - all_results['stage3_part2_adam']['mean_test']
+                improvement_pct = (improvement_abs / baseline_test * 100) if baseline_test > 0 else 0
+                f.write(f"  Improvement over Stage 3a: {improvement_abs:.6f} ({improvement_pct:.2f}%)\n")
+            
+            # Find SGD baseline for relative comparison (filter out metadata)
+            adam_algos = {k: v for k, v in adam_results.items() if not k.startswith('_')}
+            sgd_variants = {k: v for k, v in adam_algos.items() if 'sgd' in k.lower() or 'nesterov' in k.lower()}
+            if sgd_variants:
+                worst_sgd = max(sgd_variants.items(), key=lambda x: x[1]['mean_test'])
+                improvement_abs = worst_sgd[1]['mean_test'] - all_results['stage3_part2_adam']['mean_test']
+                improvement_pct = (improvement_abs / worst_sgd[1]['mean_test'] * 100) if worst_sgd[1]['mean_test'] > 0 else 0
+                f.write(f"  Improvement over SGD baseline ({worst_sgd[0]}): {improvement_abs:.6f} ({improvement_pct:.2f}%)\n")
+            
+            f.write("  All Optimizers:\n")
+            for opt, result in sorted(adam_algos.items(), key=lambda x: x[1]['mean_test']):
+                f.write(f"    {opt}: Test={result['mean_test']:.6f} ± {result['std_test']:.6f}\n")
+            f.write("\n")
+            
+            # Update baseline for next stage
+            baseline_test = all_results['stage3_part2_adam']['mean_test']
+        
+        # Stage 3c: Targeted Regularization
+        if reg_results:
+            f.write("Stage 3c: Targeted Regularization\n")
+            f.write(f"  Best Config: {all_results['stage3_part3_reg']['best_config']}\n")
+            f.write(f"  Test Loss: {all_results['stage3_part3_reg']['mean_test']:.6f} ± {all_results['stage3_part3_reg']['std_test']:.6f}\n")
+            
+            if baseline_test is not None:
+                improvement_abs = baseline_test - all_results['stage3_part3_reg']['mean_test']
+                improvement_pct = (improvement_abs / baseline_test * 100) if baseline_test > 0 else 0
+                f.write(f"  Improvement over Stage 3b: {improvement_abs:.6f} ({improvement_pct:.2f}%)\n")
+            
+            # Find baseline (no regularization) for comparison (filter out metadata)
+            reg_techs = {k: v for k, v in reg_results.items() if not k.startswith('_')}
+            baseline_reg = reg_techs.get('baseline') or reg_techs.get('none') or reg_techs.get('no_reg')
+            if baseline_reg:
+                improvement_abs = baseline_reg['mean_test'] - all_results['stage3_part3_reg']['mean_test']
+                improvement_pct = (improvement_abs / baseline_reg['mean_test'] * 100) if baseline_reg['mean_test'] > 0 else 0
+                f.write(f"  Improvement over no regularization: {improvement_abs:.6f} ({improvement_pct:.2f}%)\n")
+            
+            f.write("  All Configs:\n")
+            for cfg, result in sorted(reg_techs.items(), key=lambda x: x[1]['mean_test']):
+                f.write(f"    {cfg}: Test={result['mean_test']:.6f} ± {result['std_test']:.6f}\n")
+            f.write("\n")
+        
+        # Summary Table
         f.write("\n")
+        f.write("="*100 + "\n")
+        f.write("EXPERIMENT SUMMARY TABLE\n")
+        f.write("="*100 + "\n\n")
         
-        f.write("Stage 3b: Adam Ablations\n")
-        f.write(f"  Best Optimizer: {all_results['stage3_part2_adam']['best_optimizer']}\n")
-        f.write(f"  Test Loss: {all_results['stage3_part2_adam']['mean_test']:.6f} ± {all_results['stage3_part2_adam']['std_test']:.6f}\n")
-        f.write("  All Optimizers:\n")
-        for opt, result in all_results['stage3_part2_adam']['all_optimizers'].items():
-            f.write(f"    {opt}: {result['mean_test']:.6f} ± {result['std_test']:.6f}\n")
+        # Table header
+        f.write(f"{'Stage':<15} | {'Best Method':<20} | {'Test Loss ± Std':<20} | {'Improvement':<25} | {'Exec Time (s)':<15}\n")
+        f.write("-" * 100 + "\n")
+        
+        # Collect data for each stage
+        stage_data = []
+        total_time = 0
+        
+        # Part 1: Random Optimization
+        if ro_results:
+            # Filter out execution time metadata
+            ro_algos = {k: v for k, v in ro_results.items() if not k.startswith('_')}
+            ro_exec_time = ro_results.get('_execution_time', 0)
+            
+            best_ro = min(ro_algos.items(), key=lambda x: x[1]['mean_test'])
+            ro_method = best_ro[0]
+            ro_loss = best_ro[1]['mean_test']
+            ro_std = best_ro[1]['std_test']
+            
+            # Calculate improvement from tuned baseline
+            if 'stage2_tuned' in all_results:
+                baseline = all_results['stage2_tuned']['mean_test']
+                improvement_abs = baseline - ro_loss
+                improvement_pct = (improvement_abs / baseline * 100) if baseline > 0 else 0
+            else:
+                improvement_abs = 0
+                improvement_pct = 0
+            
+            stage_data.append({
+                'stage': 'Part 1: RO',
+                'method': ro_method,
+                'loss': ro_loss,
+                'std': ro_std,
+                'improvement_abs': improvement_abs,
+                'improvement_pct': improvement_pct,
+                'time': ro_exec_time
+            })
+            total_time += ro_exec_time
+        
+        # Part 2: Adam Ablations
+        if adam_results:
+            # Filter out execution time metadata
+            adam_algos = {k: v for k, v in adam_results.items() if not k.startswith('_')}
+            adam_exec_time = adam_results.get('_execution_time', 0)
+            
+            best_adam = min(adam_algos.items(), key=lambda x: x[1]['mean_test'])
+            adam_method = best_adam[0]
+            adam_loss = best_adam[1]['mean_test']
+            adam_std = best_adam[1]['std_test']
+            
+            # Calculate improvement from previous stage (RO)
+            if ro_results:
+                ro_algos = {k: v for k, v in ro_results.items() if not k.startswith('_')}
+                best_ro = min(ro_algos.items(), key=lambda x: x[1]['mean_test'])
+                prev_loss = best_ro[1]['mean_test']
+            elif 'stage2_tuned' in all_results:
+                prev_loss = all_results['stage2_tuned']['mean_test']
+            else:
+                prev_loss = adam_loss
+                
+            improvement_abs = prev_loss - adam_loss
+            improvement_pct = (improvement_abs / prev_loss * 100) if prev_loss > 0 else 0
+            
+            stage_data.append({
+                'stage': 'Part 2: Adam',
+                'method': adam_method,
+                'loss': adam_loss,
+                'std': adam_std,
+                'improvement_abs': improvement_abs,
+                'improvement_pct': improvement_pct,
+                'time': adam_exec_time
+            })
+            total_time += adam_exec_time
+        
+        # Part 3: Targeted Regularization
+        if reg_results:
+            # Filter out execution time metadata
+            reg_techs = {k: v for k, v in reg_results.items() if not k.startswith('_')}
+            reg_exec_time = reg_results.get('_execution_time', 0)
+            
+            best_reg = min(reg_techs.items(), key=lambda x: x[1]['mean_test'])
+            reg_method = best_reg[0]
+            reg_loss = best_reg[1]['mean_test']
+            reg_std = best_reg[1]['std_test']
+            
+            # Calculate improvement from previous stage (Adam)
+            if adam_results:
+                adam_algos = {k: v for k, v in adam_results.items() if not k.startswith('_')}
+                best_adam = min(adam_algos.items(), key=lambda x: x[1]['mean_test'])
+                prev_loss = best_adam[1]['mean_test']
+            elif ro_results:
+                ro_algos = {k: v for k, v in ro_results.items() if not k.startswith('_')}
+                best_ro = min(ro_algos.items(), key=lambda x: x[1]['mean_test'])
+                prev_loss = best_ro[1]['mean_test']
+            elif 'stage2_tuned' in all_results:
+                prev_loss = all_results['stage2_tuned']['mean_test']
+            else:
+                prev_loss = reg_loss
+                
+            improvement_abs = prev_loss - reg_loss
+            improvement_pct = (improvement_abs / prev_loss * 100) if prev_loss > 0 else 0
+            
+            stage_data.append({
+                'stage': 'Part 3: Reg',
+                'method': reg_method,
+                'loss': reg_loss,
+                'std': reg_std,
+                'improvement_abs': improvement_abs,
+                'improvement_pct': improvement_pct,
+                'time': reg_exec_time
+            })
+            total_time += reg_exec_time
+        
+        # Write table rows
+        for stage in stage_data:
+            f.write(f"{stage['stage']:<15} | {stage['method']:<20} | "
+                   f"{stage['loss']:.4f} ± {stage['std']:.4f}   | "
+                   f"{stage['improvement_abs']:.4f} ({stage['improvement_pct']:>6.2f}%)  | "
+                   f"{stage['time']:>15.2f}\n")
+        
+        # Write totals row
+        f.write("-" * 100 + "\n")
+        if stage_data:
+            total_improvement_abs = sum(s['improvement_abs'] for s in stage_data)
+            initial_loss = stage_data[0]['loss'] + stage_data[0]['improvement_abs']
+            total_improvement_pct = (total_improvement_abs / initial_loss * 100) if initial_loss > 0 else 0
+            
+            # Format time nicely
+            if total_time >= 3600:
+                hours = int(total_time // 3600)
+                minutes = int((total_time % 3600) // 60)
+                seconds = total_time % 60
+                time_str = f"{hours}h {minutes}m {seconds:.1f}s"
+            elif total_time >= 60:
+                minutes = int(total_time // 60)
+                seconds = total_time % 60
+                time_str = f"{minutes}m {seconds:.1f}s"
+            else:
+                time_str = f"{total_time:.2f}s"
+            
+            f.write(f"{'TOTAL':<15} | {'':<20} | {'':<20} | "
+                   f"{total_improvement_abs:.4f} ({total_improvement_pct:>6.2f}%)  | "
+                   f"{time_str:>15}\n")
+        
+        f.write("="*100 + "\n\n")
+        
+        # Overall summary
+        f.write("="*100 + "\n")
+        f.write("OVERALL OPTIMIZATION SUMMARY\n")
+        f.write("="*100 + "\n")
+        
+        # Calculate total improvement from worst to best
+        if ro_results and reg_results:
+            # Filter out metadata
+            ro_algos = {k: v for k, v in ro_results.items() if not k.startswith('_')}
+            worst_algo = max(ro_algos.items(), key=lambda x: x[1]['mean_test'])
+            initial_loss = worst_algo[1]['mean_test']
+            final_loss = all_results['stage3_part3_reg']['mean_test']
+            total_improvement_abs = initial_loss - final_loss
+            total_improvement_pct = (total_improvement_abs / initial_loss * 100) if initial_loss > 0 else 0
+            
+            f.write(f"\nInitial (worst RO algorithm): {initial_loss:.6f}\n")
+            f.write(f"Final (best regularization): {final_loss:.6f}\n")
+            f.write(f"Total Improvement: {total_improvement_abs:.6f} ({total_improvement_pct:.2f}%)\n")
+        
         f.write("\n")
-        
-        f.write("Stage 3c: Targeted Regularization\n")
-        f.write(f"  Best Config: {all_results['stage3_part3_reg']['best_config']}\n")
-        f.write(f"  Test Loss: {all_results['stage3_part3_reg']['mean_test']:.6f} ± {all_results['stage3_part3_reg']['std_test']:.6f}\n")
-        f.write("  All Configs:\n")
-        for cfg, result in all_results['stage3_part3_reg']['all_configs'].items():
-            f.write(f"    {cfg}: {result['mean_test']:.6f} ± {result['std_test']:.6f}\n")
-        f.write("\n")
-        
         f.write("="*100 + "\n")
         f.write(f"JSON results: {json_path}\n")
         f.write("="*100 + "\n")

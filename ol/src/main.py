@@ -12,7 +12,7 @@ from experiments.compare_performance import generate_comparison_report
 def main():
 
     # L2 testing
-    testing = False
+    testing = True
     subsample = 0.1 if testing else None
     seeds = [42] if testing else [42, 4242, 424242]
     max_evals = 500 if testing else 3000
@@ -68,9 +68,18 @@ def main():
             exp.save_path = os.path.join(os.environ['ROOT'], f"figures/{exp.dataset}/{backbone['name']}")
             os.makedirs(exp.save_path, exist_ok=True)
             
+            # Reset data loaders for each architecture (different architecture = fresh data load)
+            exp.train_loader = None
+            exp.val_loader = None
+            exp.test_loader = None
+            
+            # Store results from each experiment part
+            ro_results = None
+            adam_results = None
+            reg_results = None
             
             if run_random_optimization:
-                exp.run_random_optimization(
+                ro_results = exp.run_random_optimization(
                     max_param=50000, 
                     max_evals=max_evals, 
                     plateau_threshold=500,
@@ -78,20 +87,20 @@ def main():
                 )
             
             if run_adam_ablations:
-                params = exp.run_adam_ablations(
+                adam_hypers, adam_results = exp.run_adam_ablations(
                     max_updates=max_evals, 
                     learning_threshold=exp_config['learning_threshold'], 
                     learning_rate=backbone['alpha'], 
                     seeds=seeds
                 )
-                adam_alpha = params['adam'][0] if 'adam' in params else backbone['alpha']
-                adam_betas = params['adam'][1], params['adam'][2]
+                adam_alpha = adam_hypers['adam'][0] if 'adam' in adam_hypers else backbone['alpha']
+                adam_betas = adam_hypers['adam'][1], adam_hypers['adam'][2]
             else:
                 adam_alpha = backbone['alpha']
                 adam_betas = (0.9, 0.999)
 
             if run_targeted_regularization:
-                exp.run_targeted_regularization(
+                reg_results = exp.run_targeted_regularization(
                     max_updates=max_evals, 
                     learning_rate=adam_alpha, 
                     betas=adam_betas,
@@ -102,7 +111,9 @@ def main():
                 exp=exp,
                 architecture=backbone['name'],
                 seeds=seeds,
-                quick=testing
+                ro_results=ro_results,
+                adam_results=adam_results,
+                reg_results=reg_results
             )
 
 

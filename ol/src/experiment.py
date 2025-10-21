@@ -30,24 +30,28 @@ class Experiment:
         self.best_params = best_params or {}
         self.save_path = os.path.join(os.environ['ROOT'], f"figures/{self.dataset}")
 
+        self.train_loader = None
+        self.val_loader = None
+        self.test_loader = None
+
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.ml_logger = MLLogger()
         self.ml_logger.current_logs = []
         self.update_logs()
 
-
     def get_data(self) -> Tuple:
-        """Load/process data and wrap into PyTorch DataLoaders with logging."""
-        with self.ml_logger.log_step("Load Data") as step_info:
-            X_train, X_val, X_test, y_train, y_val, y_test, data_info = load_or_process_data(
-                self.dataset, self.target, self.method, self.subsample, self.seed
-            )
-            step_info.update(data_info)
-            train_loader, val_loader, test_loader = wrap_into_loaders(
-                self.method, X_train, X_val, X_test, y_train, y_val, y_test, self.batch_size
-            )
-        return train_loader, val_loader, test_loader
+        """Load/process data and wrap into PyTorch DataLoaders with caching."""
+        if self.train_loader is None:
+            with self.ml_logger.log_step("Load Data") as step_info:
+                X_train, X_val, X_test, y_train, y_val, y_test, data_info = load_or_process_data(
+                    self.dataset, self.target, self.method, self.subsample, self.seed
+                )
+                step_info.update(data_info)
+                self.train_loader, self.val_loader, self.test_loader = wrap_into_loaders(
+                    self.method, X_train, X_val, X_test, y_train, y_val, y_test, self.batch_size
+                )
+        return self.train_loader, self.val_loader, self.test_loader
 
     def update_logs(self):
         """Update experiment context in logger for traceability."""
@@ -60,13 +64,16 @@ class Experiment:
         )
 
     # part 1: Random Optimization
-    def run_random_optimization(self, max_param: int = 50000, max_evals: int = 11000, plateau_threshold: int = 250, seeds: List[int] = [42, 4242, 424242]):
-        random_optimization(self, max_param, max_evals, plateau_threshold, seeds)
+    def run_random_optimization(self, max_param: int = 50000, max_evals: int = 11000, plateau_threshold: int = 250, seeds: List[int] = [42, 4242, 424242], train_loader=None, val_loader=None, test_loader=None):
+        if train_loader is None: train_loader, val_loader, test_loader = self.get_data()
+        return random_optimization(self, max_param, max_evals, plateau_threshold, seeds, train_loader, val_loader, test_loader)
     
     # part 2: Adam Ablations
-    def run_adam_ablations(self, max_updates: int = 10000, learning_threshold: float = 0.5, learning_rate: float = 0.01, seeds: List[int] = [42, 4242, 424242]):
-        return adam_ablations(self, max_updates, learning_threshold, learning_rate, seeds)
+    def run_adam_ablations(self, max_updates: int = 10000, learning_threshold: float = 0.5, learning_rate: float = 0.01, seeds: List[int] = [42, 4242, 424242], train_loader=None, val_loader=None, test_loader=None):
+        if train_loader is None: train_loader, val_loader, test_loader = self.get_data()
+        return adam_ablations(self, max_updates, learning_threshold, learning_rate, seeds, train_loader, val_loader, test_loader)
 
     # part 3: Adam Regularization
-    def run_targeted_regularization(self, max_updates: int = 10000, learning_rate: Optional[float] = None, betas: Tuple[float, float] = (0.9, 0.999), seeds: List[int] = [42, 4242, 424242]):
-        targeted_regularization(self, max_updates, learning_rate, betas, seeds)
+    def run_targeted_regularization(self, max_updates: int = 10000, learning_rate: Optional[float] = None, betas: Tuple[float, float] = (0.9, 0.999), seeds: List[int] = [42, 4242, 424242], train_loader=None, val_loader=None, test_loader=None):
+        if train_loader is None: train_loader, val_loader, test_loader = self.get_data()
+        return targeted_regularization(self, max_updates, learning_rate, betas, seeds, train_loader, val_loader, test_loader)

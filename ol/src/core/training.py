@@ -62,7 +62,7 @@ def print_experiment_config(
     
     print(f"{'='*70}\n")
 
-def eval_loss(model: nn.Module, loader: DataLoader, loss_fn: Callable, device: torch.device) -> float:
+def eval_loss(model: nn.Module, loader: DataLoader, loss_fn: Callable, device: torch.device, restore_train: bool = True) -> float:
     '''
     compute average loss on loader without gradients
     '''
@@ -78,7 +78,8 @@ def eval_loss(model: nn.Module, loader: DataLoader, loss_fn: Callable, device: t
             loss = loss_fn(out, y)
             total_loss += loss.item()
             num_batches += 1
-    model.train()
+    if restore_train:
+        model.train()
     return total_loss / num_batches
 
 def train_to_budget(
@@ -95,7 +96,7 @@ def train_to_budget(
     optimizer_name: str = "unknown",
     lr_decay_rate: float = 1.0,
     decay_every: int = 1000
-) -> Tuple[List[float], List[Dict[str, float]], int, float, float]:
+) -> Tuple[List[float], int, float, float]:
     '''
     train model with optimizer until max_updates exceeded or val_loss <= l_threshold.
     evaluates val_loss every eval_interval (default: log_interval) updates.
@@ -105,7 +106,6 @@ def train_to_budget(
         eval_interval = log_interval
     
     curves: List[float] = []
-    grad_norms: List[Dict[str, float]] = []
     updates = 0
     steps_to_l = max_updates  # default if not reached
     start_time = time.perf_counter()
@@ -133,14 +133,8 @@ def train_to_budget(
                     print(f"[{optimizer_name}] Decayed LR to {new_lr:.6f} at update {updates}")
 
             if updates % eval_interval == 0:
-                val_loss = eval_loss(model, val_loader, loss_fn, device)
+                val_loss = eval_loss(model, val_loader, loss_fn, device, restore_train=True)
                 curves.append(val_loss)
-
-                norms = {}
-                for name, p in model.named_parameters():
-                    if p.grad is not None:
-                        norms[name] = p.grad.norm().item()
-                grad_norms.append(norms)
 
                 if val_loss <= l_threshold and steps_to_l == max_updates:
                     steps_to_l = updates
@@ -158,8 +152,8 @@ def train_to_budget(
 
     wall_time = time.perf_counter() - start_time
 
-    final_train_loss = eval_loss(model, train_loader, loss_fn, device)
+    final_train_loss = eval_loss(model, train_loader, loss_fn, device, restore_train=False)
 
     print(f"  [{optimizer_name}] Completed in {wall_time:.2f}s | Val: {curves[-1]:.4f} | Train: {final_train_loss:.4f} | Steps to threshold: {steps_to_l}\n")
 
-    return curves, grad_norms, steps_to_l, wall_time, final_train_loss
+    return curves, steps_to_l, wall_time, final_train_loss

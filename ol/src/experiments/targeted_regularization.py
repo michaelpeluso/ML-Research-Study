@@ -37,8 +37,11 @@ def targeted_regularization(
     max_updates: int = 10000,
     learning_rate: Optional[float] = None,  # use best from ablations
     betas: Tuple[float, float] = (0.9, 0.999),  # best from ablations
-    seeds: List[int] = [42, 4242, 424242]
-):
+    seeds: List[int] = [42, 4242, 424242],
+    train_loader=None,
+    val_loader=None,
+    test_loader=None
+) -> Dict:
     """evaluate regularization techniques with standard adam from part 2:
     - l2, early stopping, dropout, smoothing, augmentation
     - measures test impact and generalization gap
@@ -53,8 +56,10 @@ def targeted_regularization(
     part3_path = f"{self.save_path}/{os.path.splitext(os.path.basename(__file__))[0]}"
     os.makedirs(part3_path, exist_ok=True)
 
-    # setup data and model params
-    train_loader, val_loader, test_loader = self.get_data()
+    # Use provided loaders or load data (optimization: avoid redundant loading)
+    if train_loader is None:
+        train_loader, val_loader, test_loader = self.get_data()
+        
     in_dim = train_loader.dataset.tensors[0].shape[1]
     out_dim = len(torch.unique(train_loader.dataset.tensors[1])) if self.method == 'classification' else 1
     learning_rate = learning_rate or self.best_params.get('alpha', 0.01)
@@ -90,8 +95,8 @@ def targeted_regularization(
         max_updates=max_updates,
         l_threshold=0.0,  # No threshold for regularization experiments
         train_loader=train_loader,
-        val_loader=val_loader,
-        test_loader=test_loader,
+        val_loader=val_loader, #type:ignore
+        test_loader=test_loader, #type:ignore
         model=MLP(in_dim=in_dim, hidden=hidden_layers, out_dim=out_dim,
                   activation=self.best_params.get('activation', 'relu')).to(self.device),
         seeds=seeds,
@@ -146,8 +151,8 @@ def targeted_regularization(
         )
 
         # train for full budget
-        curves, _, _, wall_time, final_train_loss = train_to_budget(
-            model, opt, train_loader, val_loader,
+        curves, _, wall_time, final_train_loss = train_to_budget(
+            model, opt, train_loader, val_loader, #type:ignore
             max_updates, float('inf'), loss_fn, 
             self.device, 
             log_interval=log_interval,
@@ -168,7 +173,7 @@ def targeted_regularization(
                     break
 
         # evaluate final performance
-        test_metric = eval_loss(model, test_loader, base_loss_fn, self.device)
+        test_metric = eval_loss(model, test_loader, base_loss_fn, self.device) #type:ignore
         gen_gap = test_metric - final_train_loss
         return curves, test_metric, wall_time, gen_gap, len(curves)
 
@@ -280,7 +285,7 @@ def targeted_regularization(
 
     # label smoothing: grid over alpha (classification only, excluding 0 to force smoothing)
     if self.method == 'classification':
-        smooth_grid = [0.05, 0.1, 0.15, 0.2, 0.3]
+        smooth_grid = [0.01, 0.05, 0.1, 0.15, 0.2]
         
         print(f"\n{'='*70}")
         print(f"[TR] Running technique: LABEL SMOOTHING")
@@ -471,57 +476,56 @@ def targeted_regularization(
         colors=['#1f77b4', '#ff7f0e']  # blue for Val Loss, orange for Gen Gap
     )
 
-    # combined sensitivity plot for quick comparison
-    # normalize all grids to [0, 1] for comparison
-    norm_l2 = np.array(l2_grid) / max(l2_grid) if max(l2_grid) > 0 else np.array(l2_grid)
-    norm_patience = np.array(patience_grid) / max(patience_grid)
-    norm_dropout = np.array(dropout_grid) / max(dropout_grid) if max(dropout_grid) > 0 else np.array(dropout_grid)
-    norm_aug = np.array(aug_grid) / max(aug_grid) if max(aug_grid) > 0 else np.array(aug_grid)
+    # Create a combined subplot showing all sensitivities with proper units
+    from utils.plotter import plot_sensitivity_subplots
     
-    # prepare data for val loss plot
-    val_loss_data = [sens_l2, sens_es, sens_dropout, sens_aug]
-    val_loss_x = [norm_l2, norm_patience, norm_dropout, norm_aug]
-    val_loss_labels = ['L2', 'Early Stop', 'Dropout', 'Augment']
+    # Prepare sensitivity data for plotting
+    sensitivity_plots = [
+        {
+            'x': l2_grid,
+            'y': sens_l2,
+            'xlabel': 'L2 Weight Decay',
+            'title': 'L2 Regularization',
+            'color': '#1f77b4'
+        },
+        {
+            'x': patience_grid,
+            'y': sens_es,
+            'xlabel': 'Patience (epochs)',
+            'title': 'Early Stopping',
+            'color': '#ff7f0e'
+        },
+        {
+            'x': dropout_grid,
+            'y': sens_dropout,
+            'xlabel': 'Dropout Probability',
+            'title': 'Dropout',
+            'color': '#2ca02c'
+        },
+        {
+            'x': aug_grid,
+            'y': sens_aug,
+            'xlabel': f"{'Noise STD' if aug_method == 'gaussian' else 'Mask Probability'}",
+            'title': 'Data Augmentation',
+            'color': '#d62728'
+        }
+    ]
     
-    # prepare data for gen gap plot
-    gen_gap_data = [gen_gaps_l2, gen_gaps_es, gen_gaps_dropout, gen_gaps_aug]
-    gen_gap_x = [norm_l2, norm_patience, norm_dropout, norm_aug]
-    gen_gap_labels = ['L2', 'Early Stop', 'Dropout', 'Augment']
-    
-    # add smoothing if classification
+    # Add label smoothing for classification only
     if self.method == 'classification' and len(smooth_grid) > 0:
-        norm_smooth = np.array(smooth_grid) / max(smooth_grid) if max(smooth_grid) > 0 else np.array(smooth_grid)
-        val_loss_data.append(sens_smooth)
-        val_loss_x.append(norm_smooth)
-        val_loss_labels.append('Smoothing')
-        gen_gap_data.append(gen_gaps_smooth)
-        gen_gap_x.append(norm_smooth)
-        gen_gap_labels.append('Smoothing')
+        sensitivity_plots.append({
+            'x': smooth_grid,
+            'y': sens_smooth,
+            'xlabel': 'Smoothing Alpha',
+            'title': 'Label Smoothing',
+            'color': '#9467bd'
+        })
     
-    # plot validation loss sensitivity
-    plot_curve(
-        x=val_loss_x,
-        y_list=val_loss_data,
-        labels=val_loss_labels,
-        xlabel='Normalized Parameter Value',
-        ylabel='Validation Loss',
-        title=f'Regularization Sensitivity (Val Loss) - {self.dataset.title()}',
-        save_path=f"{part3_path}/combined_sensitivity_val.png",
-        colors=['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd'][:len(val_loss_data)],
-        linestyles=['-'] * len(val_loss_data)
-    )
-    
-    # plot generalization gap sensitivity (using distinct colors for each regularization)
-    plot_curve(
-        x=gen_gap_x,
-        y_list=gen_gap_data,
-        labels=gen_gap_labels,
-        xlabel='Normalized Parameter Value',
-        ylabel='Generalization Gap',
-        title=f'Regularization Sensitivity (Gen Gap) - {self.dataset.title()}',
-        save_path=f"{part3_path}/combined_sensitivity_gap.png",
-        colors=['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd'][:len(gen_gap_data)],
-        linestyles=['-'] * len(gen_gap_data)
+    # Create the combined sensitivity subplot
+    plot_sensitivity_subplots(
+        sensitivity_data=sensitivity_plots,
+        overall_title=f'Regularization Sensitivity Analysis - {self.dataset.title()}',
+        save_path=f"{part3_path}/combined_sensitivity_subplots.png"
     )
 
     # cumulative curves: baseline vs optimized regs
@@ -543,6 +547,9 @@ def targeted_regularization(
     # create common x-axis scaled by eval_interval
     x_vals = np.arange(max_len) * eval_interval
     
+    # Diverse linestyles to distinguish overlapping lines
+    linestyles = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (5, 2, 1, 2))]
+    
     plot_curve(
         x=x_vals,
         y_list=all_mean_curves,
@@ -552,7 +559,7 @@ def targeted_regularization(
         title=f"Regularization Curves on {self.dataset.title()} (hidden: {hidden_layers})",
         save_path=f"{part3_path}/cumulative_reg_curves.png",
         colors=['#000000', '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd'][:len(kinds)],
-        linestyles=['-'] * len(kinds)
+        linestyles=linestyles[:len(kinds)]
     )
 
     # summary table focusing on validation, test, and generalization metrics
@@ -691,3 +698,22 @@ def targeted_regularization(
 
     # generate report
     self.ml_logger.generate_log_report(output_file=f"{part3_path}/execution_report.txt", part=3)
+    
+    # Return comprehensive results for comparison report
+    summary_results = {}
+    for kind in all_data.keys():
+        if not all_data[kind]['test_metrics']:
+            continue
+        summary_results[kind] = {
+            'mean_val': float(np.mean([c[-1] for c in all_data[kind]['curves']])),
+            'std_val': float(np.std([c[-1] for c in all_data[kind]['curves']])),
+            'mean_test': float(np.mean(all_data[kind]['test_metrics'])),
+            'std_test': float(np.std(all_data[kind]['test_metrics'])),
+            'mean_gen_gap': float(np.mean(all_data[kind]['gen_gaps'])),
+            'std_gen_gap': float(np.std(all_data[kind]['gen_gaps'])),
+        }
+    
+    # Add total execution time to summary
+    summary_results['_execution_time'] = function_elapsed
+    
+    return summary_results

@@ -15,8 +15,11 @@ def adam_ablations(
     max_updates: int = 10000,
     learning_threshold: float = 0.5,
     learning_rate: float = 0.01,
-    seeds: List[int] = [42, 4242, 424242]
-) -> Dict[str, Tuple[float, float, float]]:
+    seeds: List[int] = [42, 4242, 424242],
+    train_loader=None,
+    val_loader=None,
+    test_loader=None
+) -> Tuple[Dict, Dict]:
     """optimizer ablation study with sensitivity analysis for adam-family:
     - measures speed, stability, generalization
     - generates sensitivity heatmaps and combined mosaic
@@ -39,8 +42,8 @@ def adam_ablations(
     self.ml_logger.log_metric('part2_config_learning_threshold', learning_threshold)
     self.ml_logger.log_metric('part2_config_seeds', str(seeds))
 
-    # setup data and model
-    train_loader, val_loader, test_loader = self.get_data()
+    if train_loader is None:
+        train_loader, val_loader, test_loader = self.get_data()
     in_dim = train_loader.dataset.tensors[0].shape[1]
     out_dim = len(torch.unique(train_loader.dataset.tensors[1])) if self.method == 'classification' else 1
 
@@ -63,8 +66,8 @@ def adam_ablations(
         max_updates=max_updates,
         l_threshold=learning_threshold,
         train_loader=train_loader,
-        val_loader=val_loader,
-        test_loader=test_loader,
+        val_loader=val_loader,  #type:ignore
+        test_loader=test_loader, #type:ignore
         model=MLP(in_dim=in_dim, hidden=hidden_layers, out_dim=out_dim, 
                   activation=self.best_params.get('activation', 'relu')).to(self.device),
         seeds=seeds,
@@ -87,13 +90,13 @@ def adam_ablations(
         opt = optimizer_factory(local_model, kind, **opt_kwargs)
         if opt is None:
             return None
-        curves, _, steps_to_l, wall_time, final_train_loss = train_to_budget(
-            local_model, opt, train_loader, val_loader, max_updates, learning_threshold, loss_fn, self.device,
+        curves, steps_to_l, wall_time, final_train_loss = train_to_budget(
+            local_model, opt, train_loader, val_loader, max_updates, learning_threshold, loss_fn, self.device, #type:ignore
             log_interval=log_interval,
             eval_interval=eval_interval,
             optimizer_name=kind
-        )
-        test_metric = eval_loss(local_model, test_loader, loss_fn, self.device)
+        ) 
+        test_metric = eval_loss(local_model, test_loader, loss_fn, self.device) #type:ignore
         return curves, test_metric, steps_to_l, wall_time, final_train_loss
     
     def plot_optimizer_curves(data_dict, kinds, colors, suffix="", optimized=False):
@@ -131,7 +134,8 @@ def adam_ablations(
         # create x-axis list based on each curve's length
         all_updates = [np.arange(1, len(curve) + 1) * eval_interval for curve in all_mean_curves]
 
-        linestyles = ['-',  '-.','--', '-', ':', '--', ':']  # solid, dashed, dashdot, dotted
+        # Diverse linestyles to distinguish overlapping lines
+        linestyles = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (5, 2, 1, 2)), (0, (3, 5, 1, 5))]
         title_prefix = "Optimized" if optimized else "Baseline"
         plot_curve(
             x=all_updates,
@@ -198,10 +202,9 @@ def adam_ablations(
     kinds = list(all_data.keys())
     colors_list = ['#1f77b4', '#2ca02c', '#d62728', '#9467bd', '#ff7f0e', '#17becf', '#000000']
     plot_optimizer_curves(all_data, kinds, colors_list, suffix="", optimized=False)
-
-    alpha_grid = [1e-4, 1e-3, 1e-2, 1e-1]
-    beta1_grid = [0.8, 0.9, 0.95, 0.99]
-    beta2_grid = [0.99, 0.995, 0.999, 0.9999]
+    alpha_grid = [1e-4, 1e-3, 1e-2]
+    beta1_grid = [0.85, 0.9, 0.99]
+    beta2_grid = [0.99, 0.999, 0.9999]
     default_b1 = 0.9
     default_b2 = 0.999
     data_dict = {}
@@ -312,12 +315,26 @@ def adam_ablations(
 
         self.ml_logger.log_metric(f"{variant}_best_hypers", best_hypers[variant])
 
-    # run optimized baselines with best hyperparameters
+    # retrain Adam-family variants with optimized hyperparameters
+    print(f"\n{'='*70}")
+    print("[AA] Retraining Adam-family variants with optimized hyperparameters")
+    print(f"{'='*70}")
+    
     optimized_data: Dict[str, Dict[str, Any]] = {kind: {'curves': [], 'updates': [], 'test_metrics': [], 'times': [], 'gen_gaps': []} for kind in kinds}
-    for kind in kinds:
-        alpha, b1, b2 = best_hypers.get(kind, (self.best_params.get('alpha', 0.0), 0.9, 0.999))
+    
+    # Copy baseline data for non-Adam variants (SGD, Momentum, Nesterov)
+    for kind in ['sgd', 'sgd_momentum', 'nesterov']:
+        optimized_data[kind] = all_data[kind].copy()
+    
+    # Retrain only Adam-family variants with best hyperparameters
+    for kind in adam_variants:
+        print(f"\n[AA Optimized] Retraining {kind.upper()} with best hyperparameters")
+        alpha, b1, b2 = best_hypers[kind]
+        print(f"  Best hyperparameters: α={alpha:.2e}, β₁={b1}, β₂={b2}")
+        
         results = [run_seed(kind, seed, lr=learning_rate, betas=(b1, b2), weight_decay=alpha) for seed in seeds]
         valid_results = [res for res in results if res]
+        
         if valid_results:
             curves_list = [res[0] for res in valid_results]
             test_metrics = [res[1] for res in valid_results]
@@ -326,7 +343,7 @@ def adam_ablations(
             gen_gaps = [test - train for test, train in zip(test_metrics, final_train_losses)]
             
             optimized_data[kind]['curves'] = curves_list
-            optimized_data[kind]['updates'] = np.arange(1, len(np.mean(curves_list, axis=0)) + 1) * 100
+            optimized_data[kind]['updates'] = np.arange(1, len(np.mean(curves_list, axis=0)) + 1) * eval_interval
             optimized_data[kind]['test_metrics'] = test_metrics
             optimized_data[kind]['times'] = times
             optimized_data[kind]['gen_gaps'] = gen_gaps
@@ -335,9 +352,16 @@ def adam_ablations(
             self.ml_logger.log_metric(f'{kind}_optimized_avg_test', np.mean(test_metrics))
             self.ml_logger.log_metric(f'{kind}_optimized_gen_gap', np.mean(gen_gaps))
             self.ml_logger.log_metric(f'{kind}_optimized_avg_time', np.mean(times))
-            self.ml_logger.log_metric(f'{kind}_optimized_hypers', f'alpha={alpha:.2e}, b1={b1}, b2={b2}')
+            
+            # log improvement
+            baseline_gen_gap = np.mean(all_data[kind]['gen_gaps'])
+            improvement = baseline_gen_gap - np.mean(gen_gaps)
+            self.ml_logger.log_metric(f'{kind}_gen_gap_improvement', improvement)
+            print(f"  Baseline gen gap: {baseline_gen_gap:.6f}")
+            print(f"  Optimized gen gap: {np.mean(gen_gaps):.6f}")
+            print(f"  Improvement: {improvement:.6f}")
 
-    # plot optimized curves
+    # plot optimized curves (all 7 variants)
     plot_optimizer_curves(optimized_data, kinds, colors_list, suffix="_optimized", optimized=True)
 
     # summary table with results
@@ -415,4 +439,22 @@ def adam_ablations(
     self.ml_logger.generate_log_report(output_file=f"{part2_path}/execution_report.txt", part=2)
 
     print(f"\nBest hypers per Adam-family variant: {best_hypers}")
-    return best_hypers
+    
+    # Return comprehensive results for comparison report
+    summary_results = {}
+    for kind in all_data.keys():
+        if not all_data[kind]['test_metrics']:
+            continue
+        summary_results[kind] = {
+            'mean_val': float(np.mean([c[-1] for c in all_data[kind]['curves']])),
+            'std_val': float(np.std([c[-1] for c in all_data[kind]['curves']])),
+            'mean_test': float(np.mean(all_data[kind]['test_metrics'])),
+            'std_test': float(np.std(all_data[kind]['test_metrics'])),
+            'mean_gen_gap': float(np.mean(all_data[kind]['gen_gaps'])),
+            'std_gen_gap': float(np.std(all_data[kind]['gen_gaps'])),
+        }
+    
+    # Add total execution time to summary
+    summary_results['_execution_time'] = function_elapsed
+    
+    return best_hypers, summary_results
