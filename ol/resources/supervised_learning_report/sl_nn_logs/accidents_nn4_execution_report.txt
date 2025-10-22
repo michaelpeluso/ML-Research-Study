@@ -1,0 +1,291 @@
+======================================================================
+ML EXPERIMENT DETAILED REPORT
+======================================================================
+
+EXPERIMENT CONFIGURATION
+------------------------------
+Dataset: accidents
+Target Variable: Duration_Seconds
+Learning Model: NN
+Learning Method: Regression
+Data Subsample: 0.8 (80.0%)
+Random Seed: 1
+Hyperparameter Tuning: on
+
+PERFORMANCE SUMMARY
+------------------------------
+Total Runtime: 67934.238 seconds (1132.24 minutes)
+Total Memory Delta: +523.3 MB
+Peak Memory Usage: 790.6 MB
+Number of Steps: 17
+Average Step Time: 3996.132 seconds
+Slowest Step: Compute Learning Data (17991.519s)
+Fastest Step: Pipeline Building (0.024s)
+
+DATA ANALYSIS
+------------------------------
+Initial Rows: 968278
+Rows After Cleaning: 773,059
+Training Set: 618,447 samples x 39 features
+Test Set: 154,612 samples x 39 features
+Train/Test Split: 80.0% / 20.0%
+Dataset Memory Usage: 112.86 MB
+
+MODEL CONFIGURATION
+------------------------------
+Input Dimensions: 618,447 samples x 39 features
+Feature Type Breakdown:
+  Numeric: 17
+  Categorical: 11
+  High_Cardinality: 5
+Model Type: nn
+
+MODEL PERFORMANCE RESULTS
+------------------------------
+Test Set Performance:
+  mae: 0.4876
+  mse: 0.4125
+  r2: 0.2847
+
+HYPERPARAMETER TUNING RESULTS
+------------------------------
+Parameters Tuned: 5
+Best Parameters Found:
+  max_iter: 5
+  learning_rate_init: 0.01
+  hidden_layer_sizes: (256, 256, 128, 128)
+  alpha: 0.001
+  activation: relu
+
+SYSTEM INFORMATION
+------------------------------
+Platform: win32
+Python Version: 3.12.10
+CPU Cores: 16
+Total Memory: 15.77 GB
+Process ID: 17420
+
+DETAILED STEP ANALYSIS
+------------------------------
+1. LOAD DATA
+   Status: SUCCESS
+   Timestamp: 2025-10-09T05:26:39.599266
+   Duration: 16.3214 seconds
+   Memory Change: +396.26 MB
+   Peak Memory: 697.43 MB
+   Performance: Slow
+   Step Details:
+     n_rows_initial: 968,278
+     n_rows_cleaned: 773,059
+     train_shape: (618447, 39)
+     test_shape: (154612, 39)
+     target_distribution: N/A
+     memory_usage_mb: 112.8627
+
+2. PIPELINE BUILDING
+   Status: SUCCESS
+   Timestamp: 2025-10-09T05:26:39.641687
+   Duration: 0.0243 seconds
+   Memory Change: +3.46 MB
+   Peak Memory: 700.13 MB
+   Performance: Very Fast
+   Step Details:
+     samples: 618,447
+     features: 39
+     numeric_features: 17
+     categorical_features: 11
+     high_cardinality_features: 5
+     model_type: nn
+
+3. HYPERPARAMETER TUNING
+   Status: SUCCESS
+   Timestamp: 2025-10-09T06:18:10.585271
+   Duration: 3090.9215 seconds
+   Memory Change: -384.48 MB
+   Peak Memory: 314.68 MB
+   Performance: Slow
+   Step Details:
+     parameter_count: 5
+     best_params: {'estimator__max_iter': 5, 'estimator__learning_rate_init': 0.01, 'estimator__hidden_layer_sizes': (256, 256, 128, 128), 'estimator__alpha': 0.001, 'estimator__activation': 'relu'}
+
+4. RUNTIME MEASUREMENT
+   Status: SUCCESS
+   Timestamp: 2025-10-09T06:57:21.801146
+   Duration: 2351.1921 seconds
+   Memory Change: +184.73 MB
+   Peak Memory: 501.78 MB
+   Performance: Slow
+   Step Details:
+     fit_time_seconds: 2349.7654
+     predict_time_seconds: 1.4240
+     cpu_cores: 16
+     memory_gb: 15.7700
+     platform: Windows
+     model_type: MLPRegressor
+     hidden_layers: (512, 512)
+     activation: relu
+     solver: sgd
+     learning_rate_init: 0.0010
+     n_params: 278017
+     n_layers: 4
+
+5. MODEL COMPLEXITY DATA
+   Status: SUCCESS
+   Timestamp: 2025-10-09T09:41:41.458956
+   Duration: 9859.6375 seconds
+   Memory Change: -469.15 MB
+   Peak Memory: 33.22 MB
+   Performance: Slow
+   Step Details:
+     complexity_param: estimator__learning_rate_init
+
+6. COMPUTE LEARNING DATA
+   Status: SUCCESS
+   Timestamp: 2025-10-09T14:41:33.016909
+   Duration: 17991.5188 seconds
+   Memory Change: +19.79 MB
+   Peak Memory: 63.54 MB
+   Performance: Slow
+   Step Details:
+     learning_curve_points: 10
+
+7. EVALUATE MODEL
+   Status: SUCCESS
+   Timestamp: 2025-10-09T14:41:34.722063
+   Duration: 1.6629 seconds
+   Memory Change: +221.66 MB
+   Peak Memory: 295.50 MB
+   Performance: Fast
+   Step Details:
+     test_metrics: {'mae': 0.48760753704818366, 'mse': 0.4124715410620073, 'r2': 0.28474332069973285}
+
+8. NN TRAINING WITH EPOCH CURVES
+   Status: SUCCESS
+   Timestamp: 2025-10-09T15:21:37.742787
+   Duration: 2403.0016 seconds
+   Memory Change: +490.78 MB
+   Peak Memory: 790.65 MB
+   Performance: Slow
+   Step Details:
+     epochs_run: 4
+     final_train_loss: 0.4023
+     final_val_loss: 0.4030
+
+9. GENERATE PLOTS
+   Status: SUCCESS
+   Timestamp: 2025-10-09T15:21:38.698523
+   Duration: 0.9381 seconds
+   Memory Change: -24.18 MB
+   Peak Memory: 770.37 MB
+   Performance: Fast
+   Step Details:
+     N/A
+
+10. LOAD DATA
+   Status: SUCCESS
+   Timestamp: 2025-10-09T15:21:38.986663
+   Duration: 0.1863 seconds
+   Memory Change: +88.15 MB
+   Peak Memory: 704.22 MB
+   Performance: Fast
+   Step Details:
+     n_rows_initial: Used cached clean data
+     n_rows_cleaned: 773,059
+     train_shape: (618447, 39)
+     test_shape: (154612, 39)
+     target_distribution: N/A
+     memory_usage_mb: 103.0327
+
+11. PIPELINE BUILDING
+   Status: SUCCESS
+   Timestamp: 2025-10-09T15:21:39.036803
+   Duration: 0.0311 seconds
+   Memory Change: +19.03 MB
+   Peak Memory: 724.49 MB
+   Performance: Very Fast
+   Step Details:
+     samples: 618,447
+     features: 39
+     numeric_features: 17
+     categorical_features: 11
+     high_cardinality_features: 5
+     model_type: nn
+
+12. HYPERPARAMETER TUNING
+   Status: SUCCESS
+   Timestamp: 2025-10-09T15:23:52.231555
+   Duration: 133.1745 seconds
+   Memory Change: +19.29 MB
+   Peak Memory: 743.90 MB
+   Performance: Slow
+   Step Details:
+     parameter_count: 5
+     best_params: {'estimator__activation': 'relu', 'estimator__alpha': 0.001, 'estimator__hidden_layer_sizes': (256, 256, 128, 128), 'estimator__learning_rate_init': 0.01, 'estimator__max_iter': 5}
+
+13. RUNTIME MEASUREMENT
+   Status: SUCCESS
+   Timestamp: 2025-10-09T16:02:47.797827
+   Duration: 2335.5495 seconds
+   Memory Change: -22.12 MB
+   Peak Memory: 722.32 MB
+   Performance: Slow
+   Step Details:
+     fit_time_seconds: 2334.2657
+     predict_time_seconds: 1.2807
+     cpu_cores: 16
+     memory_gb: 15.7700
+     platform: Windows
+     model_type: MLPRegressor
+     hidden_layers: (512, 512)
+     activation: relu
+     solver: sgd
+     learning_rate_init: 0.0010
+     n_params: 278017
+     n_layers: 4
+
+14. MODEL COMPLEXITY DATA
+   Status: SUCCESS
+   Timestamp: 2025-10-09T18:44:43.645229
+   Duration: 9715.8267 seconds
+   Memory Change: -687.85 MB
+   Peak Memory: 39.39 MB
+   Performance: Slow
+   Step Details:
+     complexity_param: estimator__learning_rate_init
+
+15. COMPUTE LEARNING DATA
+   Status: SUCCESS
+   Timestamp: 2025-10-09T23:38:40.519775
+   Duration: 17636.8422 seconds
+   Memory Change: -3.50 MB
+   Peak Memory: 44.48 MB
+   Performance: Slow
+   Step Details:
+     learning_curve_points: 10
+
+16. EVALUATE MODEL
+   Status: SUCCESS
+   Timestamp: 2025-10-09T23:38:42.066376
+   Duration: 1.4927 seconds
+   Memory Change: +185.16 MB
+   Peak Memory: 238.90 MB
+   Performance: Fast
+   Step Details:
+     test_metrics: {'mae': 0.48760753704818366, 'mse': 0.4124715410620073, 'r2': 0.28474332069973285}
+
+17. NN TRAINING WITH EPOCH CURVES
+   Status: SUCCESS
+   Timestamp: 2025-10-10T00:18:38.004656
+   Duration: 2395.9163 seconds
+   Memory Change: +486.31 MB
+   Peak Memory: 728.59 MB
+   Performance: Slow
+   Step Details:
+     epochs_run: 4
+     final_train_loss: 0.4023
+     final_val_loss: 0.4030
+
+======================================================================
+Report Generated: 2025-10-10 00:18:38
+Log File: logs/experiment_logs.json
+======================================================================

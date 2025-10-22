@@ -1,0 +1,61 @@
+Requirements (8/10)
+What you did well:
+You submitted a properly formatted PDF using Overleaf and provided a GitHub link with working instructions. I appreciate the instructions for running the code that is included in the DOCSTRING file. You also included valid references from outside the course material and adhered to the expected format.
+
+What needs improvement:
+Many of the plots included in the report, like Fig 14, 15, 20 etc., are quite small and not fully legible. Plot sizes should be large enough for the reader to be able to observe the plot lines, axis labels, values etc. and correlate them with the analysis. The references should be included within the 8-page limit.
+
+Problem Description (6/6)
+What you did well:
+You gave a good introduction to the datasets and highlighted key preprocessing details. This helped establish the context.
+
+What needs improvement:
+It would be good to include a bit more analysis of how the differences between the datasets make them interesting for the algorithms?
+
+Hypothesis (10/10)
+What you did well:
+Good initial hypotheses along with reasoning based on nature of algorithm and data. Good job evaluating them after the experiments and using the results as evidence.
+
+What needs improvement:
+No suggestions
+
+Decision Tree (16/17)
+What you did well:
+Good job including all the relevant plots and comparison of performance based on the results. Good discussion model generalization, overfitting, role of data and feature importance.
+
+What needs improvement:
+Details of how an iterative tuning process was performed could be included. How does fine tuning them change the performance? What other hyperparameter tuning or changes can be tried to improve performance? You should include justification for why the chosen evaluation metrics are relevant for the respective datasets. What aspects of the dataset make these metrics suitable for these datasets?
+
+k-Nearest Neighbors (16/17)
+What you did well:
+You varied k systematically and plotted how performance changed. Good interpretation of the performance plots and understanding on the role of data.
+
+What needs improvement:
+Analysis could include deeper insights such as – How did an iterative tuning process improve the final learning curve? What other hyperparameters could be tuned to improve the results? What can be done to improve generalizability? You should also justify why the chosen evaluation metrics are optimal for each dataset.
+
+Support Vector Machines (16/17)
+What you did well:
+Nice work with the comparison between kernel choices. You included plots for tuning experiments with C and gamma and discussed their selection. Good analysis of type 1, type 2 errors.
+
+What needs improvement:
+You could add more interpretation around your kernel selection—how does it match the structure of the data? More details of the iterative tuning process could be included. What improvements are possible through further tuning?
+
+Neural Networks (16/17)
+What you did well:
+You have included relevant plots such as learning, model complexity and loss curves. Discussion of performance based on different network architectures is good. Good summary of overall performance differences.
+
+What needs improvement:
+Hyperparameter tuning experiments and their roles could be elaborated more. You should refer to the model complexity curve to justify how the optimal values of the parameters were chosen. Analysis should include how trade-off between bias and variance influences this selection. More details of how an iterative tuning process was followed to improve performance could be included.
+
+Conclusion (3/6)
+What you did well:
+You included good summary of key steps for tuning and choosing a model.
+
+What needs improvement:
+The conclusion section could be stronger with more references to concepts like overfitting, bias-variance tradeoffs, or cross-validation strategies to round out your insights. You could summarize limitations based on class imbalance, potential leakage risks, data shifts etc. and suggest possible remedial steps.
+
+Extra Credit– Neural Network Activation Tests (0/5)
+Not attempted
+
+General Feedback
+Overall, you’ve done a strong job tackling a complex assignment with multiple algorithms and datasets. I appreciate your effort in structuring the report clearly and providing both visual and written analysis. In terms of analysis, my biggest recommendation is to incorporate an iterative tuning process. Focus more on interpretation by explaining what they reveal about learning behavior, bias-variance trade-off and algorithm characteristics. Keep pushing to connect technical results with theoretical ideas from class. Good luck with the upcoming assignments!

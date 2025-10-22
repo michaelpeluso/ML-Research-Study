@@ -1,0 +1,6 @@
+
+restructured main function call to be more modular for additional neural network functionality
+
+changed data extraction to mantually split validation sets rather than relying on GridSearchCV or RandomizedSearchCV
+
+fixed SL code and reran with (512, 512) and 
