@@ -68,12 +68,12 @@ def main():
             exp.save_path = os.path.join(os.environ['ROOT'], f"figures/{exp.dataset}/{backbone['name']}")
             os.makedirs(exp.save_path, exist_ok=True)
             
-            # Reset data loaders for each architecture (different architecture = fresh data load)
+            # Reset data loaders
             exp.train_loader = None
             exp.val_loader = None
             exp.test_loader = None
             
-            # Store results from each experiment part
+            # Store results
             ro_results = None
             adam_results = None
             reg_results = None
@@ -107,14 +107,15 @@ def main():
                     seeds=seeds
                 )
             
-            generate_comparison_report(
-                exp=exp,
-                architecture=backbone['name'],
-                seeds=seeds,
-                ro_results=ro_results,
-                adam_results=adam_results,
-                reg_results=reg_results
-            )
+            if run_random_optimization and run_adam_ablations and run_targeted_regularization:
+                generate_comparison_report(
+                    exp=exp,
+                    architecture=backbone['name'],
+                    seeds=seeds,
+                    ro_results=ro_results,
+                    adam_results=adam_results,
+                    reg_results=reg_results
+                )
 
 
 if __name__ == "__main__":
