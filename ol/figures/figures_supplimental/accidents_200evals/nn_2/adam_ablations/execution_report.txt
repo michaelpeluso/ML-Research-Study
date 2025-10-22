@@ -1,0 +1,342 @@
+======================================================================
+ML EXPERIMENT DETAILED REPORT
+======================================================================
+Total Duration: 510.7411500830058
+
+OPTIMIZER ABLATIONS SUMMARY TABLE
+----------------------------------------
+| Optimizer    | Val Loss at Budget |     Test Metric | Gen Gap | Time to ℓ (s) | # Grad Evals | # Func Evals | Steps to ℓ |
+|--------------|-------------------|-----------------|---------|-------------|--------|-------|-------|
+| sgd          | 1.7897 ± 0.1355 | 1.5749 ± 0.0982 | -0.1366 | 3.59 ± 0.04 | 204800 ± 0 | 200 ± 0 | 200 ± 0 |
+| sgd_momentum | 0.7707 ± 0.0165 | 0.7543 ± 0.0161 | -0.0099 | 3.56 ± 0.00 | 204800 ± 0 | 200 ± 0 | 200 ± 0 |
+| nesterov     | 0.7672 ± 0.0190 | 0.7496 ± 0.0181 | -0.0099 | 3.56 ± 0.01 | 204800 ± 0 | 200 ± 0 | 200 ± 0 |
+| adam         | 1.0174 ± 0.0626 | 0.9314 ± 0.0411 | -0.0430 | 3.57 ± 0.01 | 204800 ± 0 | 200 ± 0 | 200 ± 0 |
+| adam_no_bias | 0.6745 ± 0.0140 | 0.6620 ± 0.0111 | 0.0000 | 3.56 ± 0.01 | 204800 ± 0 | 200 ± 0 | 200 ± 0 |
+| rmsprop_like | 0.8389 ± 0.0591 | 0.7946 ± 0.0407 | -0.0206 | 3.57 ± 0.00 | 204800 ± 0 | 200 ± 0 | 200 ± 0 |
+| adamw        | 1.0172 ± 0.0624 | 0.9311 ± 0.0410 | -0.0430 | 3.57 ± 0.00 | 204800 ± 0 | 200 ± 0 | 200 ± 0 |
+
+
+
+SYSTEM INFORMATION
+------------------------------
+Platform: darwin
+Python Version: 3.13.5
+CPU Cores: 10
+Total Memory: 16.00 GB
+Process ID: 6485
+
+EXPERIMENT CONFIGURATION
+----------------------------------------
+Dataset: accidents
+Target: Duration_Seconds
+Method: regression
+Subsample: 0.8
+
+DATA ANALYSIS
+------------------------------
+Initial Rows: 965,860
+Rows After Cleaning: 965,860
+Training Set: 579516 samples x 28 features
+Validation Set: 193172 samples x 28 features
+Test Set: 193172 samples x 28 features
+Memory Before Cleaning: Used cashed memory
+Memory After Cleaning: 217.3833465576172 MB
+Memory Reduction: 0.0%
+
+DETAILED STEP ANALYSIS
+------------------------------
+1. LOAD DATA
+   Status: SUCCESS
+   Timestamp: 2025-10-22T00:51:33.104818
+   Duration: 0.1175 seconds
+   Memory Change: +332.56 MB
+   Peak Memory: 662.41 MB
+   Performance: Fast
+   Step Details:
+     Used Cached Df: True
+     N Loaded Rows: 965860
+     N Cleaned Rows: 965860
+     Train Shape: 579516 samples x 28 features
+     Validation Shape: 193172 samples x 28 features
+     Test Shape: 193172 samples x 28 features
+     Split Pct:
+       train: 0
+       val: 0
+       test: 0
+     Memory Before Clean: Used cashed memory
+     Memory After Clean: 217.3833465576172 MB
+     Memory Reduction: 0.0%
+
+2. RANDOMIZED HILL CLIMBING
+   Status: SUCCESS
+   Timestamp: 2025-10-22T00:52:47.398072
+   Duration: 73.9191 seconds
+   Memory Change: -216.02 MB
+   Peak Memory: 451.70 MB
+   Performance: Slow
+   Step Details:
+     Initial Perturb Scale: 0.1000
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Rhc Seed 42 Test Loss: 14.6568
+     Rhc Seed 42 Train Loss: 14.6173
+     Rhc Seed 42 Gen Gap: 0.0395
+     Rhc Seed 42 Final Val Loss: 14.8844
+
+3. RANDOMIZED HILL CLIMBING
+   Status: SUCCESS
+   Timestamp: 2025-10-22T00:54:03.679011
+   Duration: 74.3160 seconds
+   Memory Change: +0.02 MB
+   Peak Memory: 462.42 MB
+   Performance: Slow
+   Step Details:
+     Initial Perturb Scale: 0.1000
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Rhc Seed 4242 Test Loss: 10.2089
+     Rhc Seed 4242 Train Loss: 10.3879
+     Rhc Seed 4242 Gen Gap: -0.1791
+     Rhc Seed 4242 Final Val Loss: 10.6993
+
+4. RANDOMIZED HILL CLIMBING
+   Status: SUCCESS
+   Timestamp: 2025-10-22T00:55:19.767955
+   Duration: 74.1226 seconds
+   Memory Change: +0.02 MB
+   Peak Memory: 463.55 MB
+   Performance: Slow
+   Step Details:
+     Initial Perturb Scale: 0.1000
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Rhc Seed 424242 Test Loss: 18.0926
+     Rhc Seed 424242 Train Loss: 18.1660
+     Rhc Seed 424242 Gen Gap: -0.0734
+     Rhc Seed 424242 Final Val Loss: 18.3351
+     Rhc Mean Final Val Loss: 14.6396
+     Rhc Std Final Val Loss: 3.1221
+     Rhc Mean Test Loss: 14.3194
+     Rhc Std Test Loss: 3.2273
+
+5. SIMULATED ANNEALING
+   Status: SUCCESS
+   Timestamp: 2025-10-22T00:56:35.545306
+   Duration: 73.5581 seconds
+   Memory Change: +0.08 MB
+   Peak Memory: 494.83 MB
+   Performance: Slow
+   Step Details:
+     Min Temp: 0.0010
+     Initial Perturb Scale: 0.1000
+     Perturb Decay: 0.9950
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Final Perturb Scale: 0.0369
+     Sa Seed 42 Test Loss: 15.5454
+     Sa Seed 42 Train Loss: 15.6628
+     Sa Seed 42 Gen Gap: -0.1174
+     Sa Seed 42 Final Val Loss: 15.8060
+
+6. SIMULATED ANNEALING
+   Status: SUCCESS
+   Timestamp: 2025-10-22T00:57:51.173801
+   Duration: 73.6420 seconds
+   Memory Change: +0.00 MB
+   Peak Memory: 495.77 MB
+   Performance: Slow
+   Step Details:
+     Min Temp: 0.0010
+     Initial Perturb Scale: 0.1000
+     Perturb Decay: 0.9950
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Final Perturb Scale: 0.0369
+     Sa Seed 4242 Test Loss: 20.3196
+     Sa Seed 4242 Train Loss: 20.5713
+     Sa Seed 4242 Gen Gap: -0.2518
+     Sa Seed 4242 Final Val Loss: 20.5160
+
+7. SIMULATED ANNEALING
+   Status: SUCCESS
+   Timestamp: 2025-10-22T00:59:06.443449
+   Duration: 73.2919 seconds
+   Memory Change: +0.00 MB
+   Peak Memory: 496.77 MB
+   Performance: Slow
+   Step Details:
+     Min Temp: 0.0010
+     Initial Perturb Scale: 0.1000
+     Perturb Decay: 0.9950
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Final Perturb Scale: 0.0369
+     Sa Seed 424242 Test Loss: 14.6238
+     Sa Seed 424242 Train Loss: 14.7747
+     Sa Seed 424242 Gen Gap: -0.1509
+     Sa Seed 424242 Final Val Loss: 14.8628
+     Sa Mean Final Val Loss: 17.0616
+     Sa Std Final Val Loss: 2.4728
+     Sa Mean Test Loss: 16.8296
+     Sa Std Test Loss: 2.4963
+
+8. GENETIC ALGORITHM
+   Status: SUCCESS
+   Timestamp: 2025-10-22T01:00:22.507590
+   Duration: 55.6915 seconds
+   Memory Change: +8.62 MB
+   Peak Memory: 508.73 MB
+   Performance: Slow
+   Step Details:
+     Mutation Std: 0.0100
+     Crossover Rate: 0.7000
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Initial Fitness: 48.8809
+     Selection Method: top-k (elitist, top 50%)
+     Crossover Method: single-point at random position
+     Mutation Method: gaussian noise N(0, mutation_std)
+     Elitism: True
+     Ga Seed 42 Test Loss: 48.4077
+     Ga Seed 42 Train Loss: 48.4573
+     Ga Seed 42 Gen Gap: -0.0497
+     Ga Seed 42 Final Val Loss: 48.4885
+
+9. GENETIC ALGORITHM
+   Status: SUCCESS
+   Timestamp: 2025-10-22T01:01:38.536495
+   Duration: 55.8700 seconds
+   Memory Change: +0.03 MB
+   Peak Memory: 509.97 MB
+   Performance: Slow
+   Step Details:
+     Mutation Std: 0.0100
+     Crossover Rate: 0.7000
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Initial Fitness: 54.2473
+     Selection Method: top-k (elitist, top 50%)
+     Crossover Method: single-point at random position
+     Mutation Method: gaussian noise N(0, mutation_std)
+     Elitism: True
+     Ga Seed 4242 Test Loss: 47.5381
+     Ga Seed 4242 Train Loss: 47.6013
+     Ga Seed 4242 Gen Gap: -0.0632
+     Ga Seed 4242 Final Val Loss: 47.7218
+
+10. GENETIC ALGORITHM
+   Status: SUCCESS
+   Timestamp: 2025-10-22T01:02:54.161228
+   Duration: 55.4849 seconds
+   Memory Change: +0.02 MB
+   Peak Memory: 510.97 MB
+   Performance: Slow
+   Step Details:
+     Mutation Std: 0.0100
+     Crossover Rate: 0.7000
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Initial Fitness: 53.1264
+     Selection Method: top-k (elitist, top 50%)
+     Crossover Method: single-point at random position
+     Mutation Method: gaussian noise N(0, mutation_std)
+     Elitism: True
+     Ga Seed 424242 Test Loss: 46.7652
+     Ga Seed 424242 Train Loss: 46.8019
+     Ga Seed 424242 Gen Gap: -0.0367
+     Ga Seed 424242 Final Val Loss: 46.8585
+     Ga Mean Final Val Loss: 47.6896
+     Ga Std Final Val Loss: 0.6658
+     Ga Mean Test Loss: 47.5703
+     Ga Std Test Loss: 0.6709
+     Ro Summary Table: | Algorithm | Val Loss (Mean ± Std) | Test Loss (Mean ± Std) | Gen Gap (Mean ± Std) | Budget (Func Evals) | Seeds |
+|-----------|------------------------|------------------------|----------------------|---------------------|-------|
+| RHC | 14.639620 ± 3.122125 | 14.319414 ± 3.227348 | -0.071007 ± 0.089241 | 204 ± 0 | 3 |
+| SA | 17.061602 ± 2.472785 | 16.829590 ± 2.496302 | -0.173364 ± 0.057118 | 200 ± 0 | 3 |
+| GA | 47.689605 ± 0.665809 | 47.570321 ± 0.670912 | -0.049849 ± 0.010843 | 4 ± 0 | 3 |
+
+     Total Duration: 510.7412
+     Part2 Config Method: regression
+     Part2 Config Dataset: accidents
+     Part2 Config Hidden Layers: (256, 128)
+     Part2 Config Max Updates: 200
+     Part2 Config Learning Threshold: 0.4300
+     Part2 Config Seeds: [42, 4242, 424242]
+     Sgd Baseline Avg Steps: 200.0000
+     Sgd Baseline Avg Test: 1.5749
+     Sgd Baseline Gen Gap: -0.1366
+     Sgd Baseline Avg Time: 3.5865
+     Sgd Momentum Baseline Avg Steps: 200.0000
+     Sgd Momentum Baseline Avg Test: 0.7543
+     Sgd Momentum Baseline Gen Gap: -0.0099
+     Sgd Momentum Baseline Avg Time: 3.5616
+     Nesterov Baseline Avg Steps: 200.0000
+     Nesterov Baseline Avg Test: 0.7496
+     Nesterov Baseline Gen Gap: -0.0099
+     Nesterov Baseline Avg Time: 3.5614
+     Adam Baseline Avg Steps: 200.0000
+     Adam Baseline Avg Test: 0.9314
+     Adam Baseline Gen Gap: -0.0430
+     Adam Baseline Avg Time: 3.5721
+     Adam No Bias Baseline Avg Steps: 200.0000
+     Adam No Bias Baseline Avg Test: 0.6620
+     Adam No Bias Baseline Gen Gap: 0.0000
+     Adam No Bias Baseline Avg Time: 3.5630
+     Rmsprop Like Baseline Avg Steps: 200.0000
+     Rmsprop Like Baseline Avg Test: 0.7946
+     Rmsprop Like Baseline Gen Gap: -0.0206
+     Rmsprop Like Baseline Avg Time: 3.5698
+     Adamw Baseline Avg Steps: 200.0000
+     Adamw Baseline Avg Test: 0.9311
+     Adamw Baseline Gen Gap: -0.0430
+     Adamw Baseline Avg Time: 3.5717
+     Sensitivity Alpha Grid: [0.0001, 0.001, 0.01]
+     Sensitivity Beta1 Grid: [0.85, 0.9, 0.99]
+     Sensitivity Beta2 Grid: [0.99, 0.999, 0.9999]
+     Sensitivity Default B1: 0.9000
+     Sensitivity Default B2: 0.9990
+     Adam Gen Gap Alpha B1: -0.0635
+     Adam Gen Gap Alpha B2: -0.0468
+     Adam No Bias Gen Gap Alpha B1: -0.0158
+     Adam No Bias Gen Gap Alpha B2: -0.0108
+     Rmsprop Like Gen Gap Alpha B2: -0.0275
+     Adamw Gen Gap Alpha B1: -0.0656
+     Adamw Gen Gap Alpha B2: -0.0482
+     Adam Best Hypers: (0.01, 0.85, 0.999)
+     Adam No Bias Best Hypers: (0.001, 0.9, 0.9999)
+     Rmsprop Like Best Hypers: (0.01, 0.0, 0.99)
+     Adamw Best Hypers: (0.01, 0.85, 0.999)
+     Adam Optimized Avg Test: 0.8408
+     Adam Optimized Gen Gap: -0.0273
+     Adam Optimized Avg Time: 3.5940
+     Adam Gen Gap Improvement: -0.0157
+     Adam No Bias Optimized Avg Test: 0.5963
+     Adam No Bias Optimized Gen Gap: 0.0010
+     Adam No Bias Optimized Avg Time: 3.6148
+     Adam No Bias Gen Gap Improvement: -0.0010
+     Rmsprop Like Optimized Avg Test: 0.7427
+     Rmsprop Like Optimized Gen Gap: -0.0152
+     Rmsprop Like Optimized Avg Time: 3.6185
+     Rmsprop Like Gen Gap Improvement: -0.0055
+     Adamw Optimized Avg Test: 0.8866
+     Adamw Optimized Gen Gap: -0.0354
+     Adamw Optimized Avg Time: 3.6304
+     Adamw Gen Gap Improvement: -0.0076
+     Part2 Table: | Optimizer    | Val Loss at Budget |     Test Metric | Gen Gap | Time to ℓ (s) | # Grad Evals | # Func Evals | Steps to ℓ |
+|--------------|-------------------|-----------------|---------|-------------|--------|-------|-------|
+| sgd          | 1.7897 ± 0.1355 | 1.5749 ± 0.0982 | -0.1366 | 3.59 ± 0.04 | 204800 ± 0 | 200 ± 0 | 200 ± 0 |
+| sgd_momentum | 0.7707 ± 0.0165 | 0.7543 ± 0.0161 | -0.0099 | 3.56 ± 0.00 | 204800 ± 0 | 200 ± 0 | 200 ± 0 |
+| nesterov     | 0.7672 ± 0.0190 | 0.7496 ± 0.0181 | -0.0099 | 3.56 ± 0.01 | 204800 ± 0 | 200 ± 0 | 200 ± 0 |
+| adam         | 1.0174 ± 0.0626 | 0.9314 ± 0.0411 | -0.0430 | 3.57 ± 0.01 | 204800 ± 0 | 200 ± 0 | 200 ± 0 |
+| adam_no_bias | 0.6745 ± 0.0140 | 0.6620 ± 0.0111 | 0.0000 | 3.56 ± 0.01 | 204800 ± 0 | 200 ± 0 | 200 ± 0 |
+| rmsprop_like | 0.8389 ± 0.0591 | 0.7946 ± 0.0407 | -0.0206 | 3.57 ± 0.00 | 204800 ± 0 | 200 ± 0 | 200 ± 0 |
+| adamw        | 1.0172 ± 0.0624 | 0.9311 ± 0.0410 | -0.0430 | 3.57 ± 0.00 | 204800 ± 0 | 200 ± 0 | 200 ± 0 |
+
+     Best Baseline Optimizer: sgd (gen_gap=-0.136594)
+     Best Adam Family Optimizer: adam (gen_gap=-0.043008)
+     Overall Best Optimizer: sgd (gen_gap=-0.136594)
+
+======================================================================
+Report Generated: 2025-10-22 01:11:26 EDT
+Log File: /Users/mmyron/Documents/ol/ol/logs
+======================================================================

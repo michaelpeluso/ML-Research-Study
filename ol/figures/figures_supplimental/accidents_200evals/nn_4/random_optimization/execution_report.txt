@@ -1,0 +1,350 @@
+======================================================================
+ML EXPERIMENT DETAILED REPORT
+======================================================================
+Total Duration: 703.6221193329984
+
+RANDOM OPTIMIZATION SUMMARY TABLE
+----------------------------------------
+No table available
+
+Randomized Hill Climbing:
+  Trainable Parameters: 49537
+  Budget: 200 evaluations
+  Used: 204 (102.0% of budget)
+  Initial Loss: 70.67903972807385
+  Final Loss: 7.991200048456747
+  Improvement: 62.6878 (88.7%)
+  Restarts: 5
+  Decay Rate: 0.9950
+
+Randomized Hill Climbing:
+  Trainable Parameters: 49537
+  Budget: 200 evaluations
+  Used: 204 (102.0% of budget)
+  Initial Loss: 69.50905161055307
+  Final Loss: 9.487247721858756
+  Improvement: 60.0218 (86.4%)
+  Restarts: 5
+  Decay Rate: 0.9950
+
+Randomized Hill Climbing:
+  Trainable Parameters: 49537
+  Budget: 200 evaluations
+  Used: 204 (102.0% of budget)
+  Initial Loss: 70.32036356446605
+  Final Loss: 7.834618750072661
+  Improvement: 62.4857 (88.9%)
+  Restarts: 5
+  Decay Rate: 0.9950
+
+Simulated Annealing:
+  Trainable Parameters: 49537
+  Budget: 200 evaluations
+  Used: 200 (100.0% of budget)
+  Initial Loss: 70.67903972807385
+  Final Loss: 7.8806460143397095
+  Improvement: 62.7984 (88.9%)
+  Initial Temp: 0.1000
+  Final Temp: 0.054997
+  Cooling Rate: 0.0030
+
+Simulated Annealing:
+  Trainable Parameters: 49537
+  Budget: 200 evaluations
+  Used: 200 (100.0% of budget)
+  Initial Loss: 69.50905161055307
+  Final Loss: 7.130110831487746
+  Improvement: 62.3789 (89.7%)
+  Initial Temp: 0.1000
+  Final Temp: 0.054997
+  Cooling Rate: 0.0030
+
+Simulated Annealing:
+  Trainable Parameters: 49537
+  Budget: 200 evaluations
+  Used: 200 (100.0% of budget)
+  Initial Loss: 70.32036356446605
+  Final Loss: 5.57756324546047
+  Improvement: 64.7428 (92.1%)
+  Initial Temp: 0.1000
+  Final Temp: 0.054997
+  Cooling Rate: 0.0030
+
+Genetic Algorithm:
+  Trainable Parameters: 49537
+  Budget: 200 evaluations
+  Used: 200 (100.0% of budget)
+  Initial Loss: N/A
+  Final Loss: 57.66969737300166
+  Improvement: -57.6697 (-5767.0%)
+  Generations: 3
+  Population Size: 50
+  Mutation Rate: 0.10
+
+Genetic Algorithm:
+  Trainable Parameters: 49537
+  Budget: 200 evaluations
+  Used: 200 (100.0% of budget)
+  Initial Loss: N/A
+  Final Loss: 60.08508054541532
+  Improvement: -60.0851 (-6008.5%)
+  Generations: 3
+  Population Size: 50
+  Mutation Rate: 0.10
+
+Genetic Algorithm:
+  Trainable Parameters: 49537
+  Budget: 200 evaluations
+  Used: 200 (100.0% of budget)
+  Initial Loss: N/A
+  Final Loss: 60.0152629266971
+  Improvement: -60.0153 (-6001.5%)
+  Generations: 3
+  Population Size: 50
+  Mutation Rate: 0.10
+
+
+SYSTEM INFORMATION
+------------------------------
+Platform: darwin
+Python Version: 3.13.5
+CPU Cores: 10
+Total Memory: 16.00 GB
+Process ID: 6485
+
+EXPERIMENT CONFIGURATION
+----------------------------------------
+Dataset: accidents
+Target: Duration_Seconds
+Method: regression
+Subsample: 0.8
+
+DATA ANALYSIS
+------------------------------
+Initial Rows: 965,860
+Rows After Cleaning: 965,860
+Training Set: 579516 samples x 28 features
+Validation Set: 193172 samples x 28 features
+Test Set: 193172 samples x 28 features
+Memory Before Cleaning: Used cashed memory
+Memory After Cleaning: 217.3833465576172 MB
+Memory Reduction: 0.0%
+
+DETAILED STEP ANALYSIS
+------------------------------
+1. LOAD DATA
+   Status: SUCCESS
+   Timestamp: 2025-10-22T01:18:26.164968
+   Duration: 0.1141 seconds
+   Memory Change: +227.00 MB
+   Peak Memory: 860.50 MB
+   Performance: Fast
+   Step Details:
+     Used Cached Df: True
+     N Loaded Rows: 965860
+     N Cleaned Rows: 965860
+     Train Shape: 579516 samples x 28 features
+     Validation Shape: 193172 samples x 28 features
+     Test Shape: 193172 samples x 28 features
+     Split Pct:
+       train: 0
+       val: 0
+       test: 0
+     Memory Before Clean: Used cashed memory
+     Memory After Clean: 217.3833465576172 MB
+     Memory Reduction: 0.0%
+
+2. RANDOMIZED HILL CLIMBING
+   Status: SUCCESS
+   Timestamp: 2025-10-22T01:19:54.151991
+   Duration: 87.5513 seconds
+   Memory Change: -300.25 MB
+   Peak Memory: 558.25 MB
+   Performance: Slow
+   Step Details:
+     Initial Perturb Scale: 0.1000
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Rhc Seed 42 Test Loss: 7.9303
+     Rhc Seed 42 Train Loss: 8.0244
+     Rhc Seed 42 Gen Gap: -0.0941
+     Rhc Seed 42 Final Val Loss: 7.9912
+
+3. RANDOMIZED HILL CLIMBING
+   Status: SUCCESS
+   Timestamp: 2025-10-22T01:21:16.466071
+   Duration: 80.0134 seconds
+   Memory Change: +0.00 MB
+   Peak Memory: 568.09 MB
+   Performance: Slow
+   Step Details:
+     Initial Perturb Scale: 0.1000
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Rhc Seed 4242 Test Loss: 9.2650
+     Rhc Seed 4242 Train Loss: 9.4495
+     Rhc Seed 4242 Gen Gap: -0.1845
+     Rhc Seed 4242 Final Val Loss: 9.4872
+
+4. RANDOMIZED HILL CLIMBING
+   Status: SUCCESS
+   Timestamp: 2025-10-22T01:22:34.076767
+   Duration: 75.6018 seconds
+   Memory Change: +0.00 MB
+   Peak Memory: 568.09 MB
+   Performance: Slow
+   Step Details:
+     Initial Perturb Scale: 0.1000
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Rhc Seed 424242 Test Loss: 7.7055
+     Rhc Seed 424242 Train Loss: 7.7791
+     Rhc Seed 424242 Gen Gap: -0.0736
+     Rhc Seed 424242 Final Val Loss: 7.8346
+     Rhc Mean Final Val Loss: 8.4377
+     Rhc Std Final Val Loss: 0.7449
+     Rhc Mean Test Loss: 8.3003
+     Rhc Std Test Loss: 0.6883
+
+5. SIMULATED ANNEALING
+   Status: SUCCESS
+   Timestamp: 2025-10-22T01:23:50.157659
+   Duration: 73.9253 seconds
+   Memory Change: +0.00 MB
+   Peak Memory: 595.58 MB
+   Performance: Slow
+   Step Details:
+     Min Temp: 0.0010
+     Initial Perturb Scale: 0.1000
+     Perturb Decay: 0.9950
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Final Perturb Scale: 0.0369
+     Sa Seed 42 Test Loss: 7.8005
+     Sa Seed 42 Train Loss: 7.8972
+     Sa Seed 42 Gen Gap: -0.0967
+     Sa Seed 42 Final Val Loss: 7.8806
+
+6. SIMULATED ANNEALING
+   Status: SUCCESS
+   Timestamp: 2025-10-22T01:25:05.946098
+   Duration: 73.7993 seconds
+   Memory Change: +0.00 MB
+   Peak Memory: 595.59 MB
+   Performance: Slow
+   Step Details:
+     Min Temp: 0.0010
+     Initial Perturb Scale: 0.1000
+     Perturb Decay: 0.9950
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Final Perturb Scale: 0.0369
+     Sa Seed 4242 Test Loss: 6.8871
+     Sa Seed 4242 Train Loss: 7.1524
+     Sa Seed 4242 Gen Gap: -0.2653
+     Sa Seed 4242 Final Val Loss: 7.1301
+
+7. SIMULATED ANNEALING
+   Status: SUCCESS
+   Timestamp: 2025-10-22T01:26:21.434666
+   Duration: 73.5079 seconds
+   Memory Change: +0.00 MB
+   Peak Memory: 595.59 MB
+   Performance: Slow
+   Step Details:
+     Min Temp: 0.0010
+     Initial Perturb Scale: 0.1000
+     Perturb Decay: 0.9950
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Final Perturb Scale: 0.0369
+     Sa Seed 424242 Test Loss: 5.4785
+     Sa Seed 424242 Train Loss: 5.5797
+     Sa Seed 424242 Gen Gap: -0.1012
+     Sa Seed 424242 Final Val Loss: 5.5776
+     Sa Mean Final Val Loss: 6.8628
+     Sa Std Final Val Loss: 0.9590
+     Sa Mean Test Loss: 6.7220
+     Sa Std Test Loss: 0.9551
+
+8. GENETIC ALGORITHM
+   Status: SUCCESS
+   Timestamp: 2025-10-22T01:27:37.171849
+   Duration: 55.3732 seconds
+   Memory Change: +7.45 MB
+   Peak Memory: 604.12 MB
+   Performance: Slow
+   Step Details:
+     Mutation Std: 0.0100
+     Crossover Rate: 0.7000
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Initial Fitness: 60.8966
+     Selection Method: top-k (elitist, top 50%)
+     Crossover Method: single-point at random position
+     Mutation Method: gaussian noise N(0, mutation_std)
+     Elitism: True
+     Ga Seed 42 Test Loss: 57.6256
+     Ga Seed 42 Train Loss: 57.6172
+     Ga Seed 42 Gen Gap: 0.0083
+     Ga Seed 42 Final Val Loss: 57.6697
+
+9. GENETIC ALGORITHM
+   Status: SUCCESS
+   Timestamp: 2025-10-22T01:28:52.623322
+   Duration: 55.3624 seconds
+   Memory Change: +0.00 MB
+   Peak Memory: 604.12 MB
+   Performance: Slow
+   Step Details:
+     Mutation Std: 0.0100
+     Crossover Rate: 0.7000
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Initial Fitness: 62.8370
+     Selection Method: top-k (elitist, top 50%)
+     Crossover Method: single-point at random position
+     Mutation Method: gaussian noise N(0, mutation_std)
+     Elitism: True
+     Ga Seed 4242 Test Loss: 60.0499
+     Ga Seed 4242 Train Loss: 60.0384
+     Ga Seed 4242 Gen Gap: 0.0115
+     Ga Seed 4242 Final Val Loss: 60.0851
+
+10. GENETIC ALGORITHM
+   Status: SUCCESS
+   Timestamp: 2025-10-22T01:30:07.849203
+   Duration: 55.2004 seconds
+   Memory Change: +0.00 MB
+   Peak Memory: 604.12 MB
+   Performance: Slow
+   Step Details:
+     Mutation Std: 0.0100
+     Crossover Rate: 0.7000
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Initial Fitness: 61.8697
+     Selection Method: top-k (elitist, top 50%)
+     Crossover Method: single-point at random position
+     Mutation Method: gaussian noise N(0, mutation_std)
+     Elitism: True
+     Ga Seed 424242 Test Loss: 59.9629
+     Ga Seed 424242 Train Loss: 59.9628
+     Ga Seed 424242 Gen Gap: 0.0001
+     Ga Seed 424242 Final Val Loss: 60.0153
+     Ga Mean Final Val Loss: 59.2567
+     Ga Std Final Val Loss: 1.1225
+     Ga Mean Test Loss: 59.2128
+     Ga Std Test Loss: 1.1229
+     Ro Summary Table: | Algorithm | Val Loss (Mean ± Std) | Test Loss (Mean ± Std) | Gen Gap (Mean ± Std) | Budget (Func Evals) | Seeds |
+|-----------|------------------------|------------------------|----------------------|---------------------|-------|
+| RHC | 8.437689 ± 0.744898 | 8.300275 ± 0.688278 | -0.117400 ± 0.048198 | 204 ± 0 | 3 |
+| SA | 6.862773 ± 0.959045 | 6.722038 ± 0.955126 | -0.154418 ± 0.078407 | 200 ± 0 | 3 |
+| GA | 59.256680 ± 1.122528 | 59.212806 ± 1.122913 | 0.006650 ± 0.004786 | 4 ± 0 | 3 |
+
+     Total Duration: 703.6221
+
+======================================================================
+Report Generated: 2025-10-22 01:30:09 EDT
+Log File: /Users/mmyron/Documents/ol/ol/logs
+======================================================================

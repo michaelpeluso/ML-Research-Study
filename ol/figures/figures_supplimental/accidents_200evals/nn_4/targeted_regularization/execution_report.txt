@@ -1,0 +1,381 @@
+======================================================================
+ML EXPERIMENT DETAILED REPORT
+======================================================================
+Total Duration: 407.61809354199795
+
+REGULARIZATION SUMMARY TABLE
+----------------------------------------
+| Regularizer     |            Val Loss |         Test Metric |  Gen Gap |        Time (s) |
+|-----------------|---------------------|---------------------|----------|-----------------|
+| baseline        | 0.593836 ± 0.021302 | 0.587966 ± 0.020742 | 0.002246 | 3.5277 ± 0.0140 |
+| l2              | 0.586597 ± 0.015041 | 0.581092 ± 0.014578 | 0.002300 | 3.5380 ± 0.0051 |
+| early_stopping  | 0.593836 ± 0.021302 | 0.587966 ± 0.020742 | 0.002246 | 3.5320 ± 0.0049 |
+| dropout         | 0.610441 ± 0.025101 | 0.603746 ± 0.024250 | 0.001230 | 3.8848 ± 0.0050 |
+| label_smoothing | 0.593836 ± 0.021302 | 0.587966 ± 0.020742 | 0.002246 | 3.5234 ± 0.0042 |
+| augmentation    | 0.593836 ± 0.021302 | 0.587966 ± 0.020742 | 0.002246 | 3.5244 ± 0.0073 |
+
+Best configurations:
+L2 weight decay: 1.00e-04
+Early stopping patience: 3
+Dropout probability: 0.100000
+
+Regularization Impact:
+
+Combined Recipe Performance:
+Validation Loss: 0.593836 ± 0.021302
+Test Metric: 0.587966 ± 0.020742
+Generalization Gap: 0.002246
+Training Time: 3.5395 ± 0.0071s
+
+Hypothesis Result:
+
+Hypothesis Test - Combined Recipe Performance:
+- Best Single Regularizer Gap: 0.001230
+- Combined Recipe Gap: 0.002246
+
+SYSTEM INFORMATION
+------------------------------
+Platform: darwin
+Python Version: 3.13.5
+CPU Cores: 10
+Total Memory: 16.00 GB
+Process ID: 6485
+
+EXPERIMENT CONFIGURATION
+----------------------------------------
+Dataset: accidents
+Target: Duration_Seconds
+Method: regression
+Subsample: 0.8
+
+DATA ANALYSIS
+------------------------------
+Initial Rows: 965,860
+Rows After Cleaning: 965,860
+Training Set: 579516 samples x 28 features
+Validation Set: 193172 samples x 28 features
+Test Set: 193172 samples x 28 features
+Memory Before Cleaning: Used cashed memory
+Memory After Cleaning: 217.3833465576172 MB
+Memory Reduction: 0.0%
+
+DETAILED STEP ANALYSIS
+------------------------------
+1. LOAD DATA
+   Status: SUCCESS
+   Timestamp: 2025-10-22T01:18:26.164968
+   Duration: 0.1141 seconds
+   Memory Change: +227.00 MB
+   Peak Memory: 860.50 MB
+   Performance: Fast
+   Step Details:
+     Used Cached Df: True
+     N Loaded Rows: 965860
+     N Cleaned Rows: 965860
+     Train Shape: 579516 samples x 28 features
+     Validation Shape: 193172 samples x 28 features
+     Test Shape: 193172 samples x 28 features
+     Split Pct:
+       train: 0
+       val: 0
+       test: 0
+     Memory Before Clean: Used cashed memory
+     Memory After Clean: 217.3833465576172 MB
+     Memory Reduction: 0.0%
+
+2. RANDOMIZED HILL CLIMBING
+   Status: SUCCESS
+   Timestamp: 2025-10-22T01:19:54.151991
+   Duration: 87.5513 seconds
+   Memory Change: -300.25 MB
+   Peak Memory: 558.25 MB
+   Performance: Slow
+   Step Details:
+     Initial Perturb Scale: 0.1000
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Rhc Seed 42 Test Loss: 7.9303
+     Rhc Seed 42 Train Loss: 8.0244
+     Rhc Seed 42 Gen Gap: -0.0941
+     Rhc Seed 42 Final Val Loss: 7.9912
+
+3. RANDOMIZED HILL CLIMBING
+   Status: SUCCESS
+   Timestamp: 2025-10-22T01:21:16.466071
+   Duration: 80.0134 seconds
+   Memory Change: +0.00 MB
+   Peak Memory: 568.09 MB
+   Performance: Slow
+   Step Details:
+     Initial Perturb Scale: 0.1000
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Rhc Seed 4242 Test Loss: 9.2650
+     Rhc Seed 4242 Train Loss: 9.4495
+     Rhc Seed 4242 Gen Gap: -0.1845
+     Rhc Seed 4242 Final Val Loss: 9.4872
+
+4. RANDOMIZED HILL CLIMBING
+   Status: SUCCESS
+   Timestamp: 2025-10-22T01:22:34.076767
+   Duration: 75.6018 seconds
+   Memory Change: +0.00 MB
+   Peak Memory: 568.09 MB
+   Performance: Slow
+   Step Details:
+     Initial Perturb Scale: 0.1000
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Rhc Seed 424242 Test Loss: 7.7055
+     Rhc Seed 424242 Train Loss: 7.7791
+     Rhc Seed 424242 Gen Gap: -0.0736
+     Rhc Seed 424242 Final Val Loss: 7.8346
+     Rhc Mean Final Val Loss: 8.4377
+     Rhc Std Final Val Loss: 0.7449
+     Rhc Mean Test Loss: 8.3003
+     Rhc Std Test Loss: 0.6883
+
+5. SIMULATED ANNEALING
+   Status: SUCCESS
+   Timestamp: 2025-10-22T01:23:50.157659
+   Duration: 73.9253 seconds
+   Memory Change: +0.00 MB
+   Peak Memory: 595.58 MB
+   Performance: Slow
+   Step Details:
+     Min Temp: 0.0010
+     Initial Perturb Scale: 0.1000
+     Perturb Decay: 0.9950
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Final Perturb Scale: 0.0369
+     Sa Seed 42 Test Loss: 7.8005
+     Sa Seed 42 Train Loss: 7.8972
+     Sa Seed 42 Gen Gap: -0.0967
+     Sa Seed 42 Final Val Loss: 7.8806
+
+6. SIMULATED ANNEALING
+   Status: SUCCESS
+   Timestamp: 2025-10-22T01:25:05.946098
+   Duration: 73.7993 seconds
+   Memory Change: +0.00 MB
+   Peak Memory: 595.59 MB
+   Performance: Slow
+   Step Details:
+     Min Temp: 0.0010
+     Initial Perturb Scale: 0.1000
+     Perturb Decay: 0.9950
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Final Perturb Scale: 0.0369
+     Sa Seed 4242 Test Loss: 6.8871
+     Sa Seed 4242 Train Loss: 7.1524
+     Sa Seed 4242 Gen Gap: -0.2653
+     Sa Seed 4242 Final Val Loss: 7.1301
+
+7. SIMULATED ANNEALING
+   Status: SUCCESS
+   Timestamp: 2025-10-22T01:26:21.434666
+   Duration: 73.5079 seconds
+   Memory Change: +0.00 MB
+   Peak Memory: 595.59 MB
+   Performance: Slow
+   Step Details:
+     Min Temp: 0.0010
+     Initial Perturb Scale: 0.1000
+     Perturb Decay: 0.9950
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Final Perturb Scale: 0.0369
+     Sa Seed 424242 Test Loss: 5.4785
+     Sa Seed 424242 Train Loss: 5.5797
+     Sa Seed 424242 Gen Gap: -0.1012
+     Sa Seed 424242 Final Val Loss: 5.5776
+     Sa Mean Final Val Loss: 6.8628
+     Sa Std Final Val Loss: 0.9590
+     Sa Mean Test Loss: 6.7220
+     Sa Std Test Loss: 0.9551
+
+8. GENETIC ALGORITHM
+   Status: SUCCESS
+   Timestamp: 2025-10-22T01:27:37.171849
+   Duration: 55.3732 seconds
+   Memory Change: +7.45 MB
+   Peak Memory: 604.12 MB
+   Performance: Slow
+   Step Details:
+     Mutation Std: 0.0100
+     Crossover Rate: 0.7000
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Initial Fitness: 60.8966
+     Selection Method: top-k (elitist, top 50%)
+     Crossover Method: single-point at random position
+     Mutation Method: gaussian noise N(0, mutation_std)
+     Elitism: True
+     Ga Seed 42 Test Loss: 57.6256
+     Ga Seed 42 Train Loss: 57.6172
+     Ga Seed 42 Gen Gap: 0.0083
+     Ga Seed 42 Final Val Loss: 57.6697
+
+9. GENETIC ALGORITHM
+   Status: SUCCESS
+   Timestamp: 2025-10-22T01:28:52.623322
+   Duration: 55.3624 seconds
+   Memory Change: +0.00 MB
+   Peak Memory: 604.12 MB
+   Performance: Slow
+   Step Details:
+     Mutation Std: 0.0100
+     Crossover Rate: 0.7000
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Initial Fitness: 62.8370
+     Selection Method: top-k (elitist, top 50%)
+     Crossover Method: single-point at random position
+     Mutation Method: gaussian noise N(0, mutation_std)
+     Elitism: True
+     Ga Seed 4242 Test Loss: 60.0499
+     Ga Seed 4242 Train Loss: 60.0384
+     Ga Seed 4242 Gen Gap: 0.0115
+     Ga Seed 4242 Final Val Loss: 60.0851
+
+10. GENETIC ALGORITHM
+   Status: SUCCESS
+   Timestamp: 2025-10-22T01:30:07.849203
+   Duration: 55.2004 seconds
+   Memory Change: +0.00 MB
+   Peak Memory: 604.12 MB
+   Performance: Slow
+   Step Details:
+     Mutation Std: 0.0100
+     Crossover Rate: 0.7000
+     Plateau Threshold: 500
+     Min Delta: 0.0000
+     Initial Fitness: 61.8697
+     Selection Method: top-k (elitist, top 50%)
+     Crossover Method: single-point at random position
+     Mutation Method: gaussian noise N(0, mutation_std)
+     Elitism: True
+     Ga Seed 424242 Test Loss: 59.9629
+     Ga Seed 424242 Train Loss: 59.9628
+     Ga Seed 424242 Gen Gap: 0.0001
+     Ga Seed 424242 Final Val Loss: 60.0153
+     Ga Mean Final Val Loss: 59.2567
+     Ga Std Final Val Loss: 1.1225
+     Ga Mean Test Loss: 59.2128
+     Ga Std Test Loss: 1.1229
+     Ro Summary Table: | Algorithm | Val Loss (Mean ± Std) | Test Loss (Mean ± Std) | Gen Gap (Mean ± Std) | Budget (Func Evals) | Seeds |
+|-----------|------------------------|------------------------|----------------------|---------------------|-------|
+| RHC | 8.437689 ± 0.744898 | 8.300275 ± 0.688278 | -0.117400 ± 0.048198 | 204 ± 0 | 3 |
+| SA | 6.862773 ± 0.959045 | 6.722038 ± 0.955126 | -0.154418 ± 0.078407 | 200 ± 0 | 3 |
+| GA | 59.256680 ± 1.122528 | 59.212806 ± 1.122913 | 0.006650 ± 0.004786 | 4 ± 0 | 3 |
+
+     Total Duration: 407.6181
+     Part2 Config Method: regression
+     Part2 Config Dataset: accidents
+     Part2 Config Hidden Layers: (256, 256, 128, 128)
+     Part2 Config Max Updates: 200
+     Part2 Config Learning Threshold: 0.4300
+     Part2 Config Seeds: [42, 4242, 424242]
+     Sgd Baseline Avg Steps: 200.0000
+     Sgd Baseline Avg Test: 1.1989
+     Sgd Baseline Gen Gap: -0.0861
+     Sgd Baseline Avg Time: 3.4812
+     Sgd Momentum Baseline Avg Steps: 200.0000
+     Sgd Momentum Baseline Avg Test: 0.5681
+     Sgd Momentum Baseline Gen Gap: 0.0005
+     Sgd Momentum Baseline Avg Time: 3.4898
+     Nesterov Baseline Avg Steps: 200.0000
+     Nesterov Baseline Avg Test: 0.5872
+     Nesterov Baseline Gen Gap: -0.0007
+     Nesterov Baseline Avg Time: 3.4904
+     Adam Baseline Avg Steps: 200.0000
+     Adam Baseline Avg Test: 0.7300
+     Adam Baseline Gen Gap: -0.0161
+     Adam Baseline Avg Time: 3.5265
+     Adam No Bias Baseline Avg Steps: 200.0000
+     Adam No Bias Baseline Avg Test: 0.6233
+     Adam No Bias Baseline Gen Gap: 0.0010
+     Adam No Bias Baseline Avg Time: 3.5226
+     Rmsprop Like Baseline Avg Steps: 200.0000
+     Rmsprop Like Baseline Avg Test: 1.9227
+     Rmsprop Like Baseline Gen Gap: -0.0039
+     Rmsprop Like Baseline Avg Time: 3.5295
+     Adamw Baseline Avg Steps: 200.0000
+     Adamw Baseline Avg Test: 0.7297
+     Adamw Baseline Gen Gap: -0.0161
+     Adamw Baseline Avg Time: 3.5346
+     Sensitivity Alpha Grid: [0.0001, 0.001, 0.01]
+     Sensitivity Beta1 Grid: [0.85, 0.9, 0.99]
+     Sensitivity Beta2 Grid: [0.99, 0.999, 0.9999]
+     Sensitivity Default B1: 0.9000
+     Sensitivity Default B2: 0.9990
+     Adam Gen Gap Alpha B1: -0.0325
+     Adam Gen Gap Alpha B2: -0.0112
+     Adam No Bias Gen Gap Alpha B1: -0.0183
+     Adam No Bias Gen Gap Alpha B2: -0.0009
+     Rmsprop Like Gen Gap Alpha B2: -0.0002
+     Adamw Gen Gap Alpha B1: -0.0399
+     Adamw Gen Gap Alpha B2: -0.0164
+     Adam Best Hypers: (0.01, 0.85, 0.999)
+     Adam No Bias Best Hypers: (0.001, 0.9, 0.9999)
+     Rmsprop Like Best Hypers: (0.001, 0.0, 0.9999)
+     Adamw Best Hypers: (0.01, 0.85, 0.999)
+     Adam Optimized Avg Test: 0.6293
+     Adam Optimized Gen Gap: -0.0015
+     Adam Optimized Avg Time: 3.5411
+     Adam Gen Gap Improvement: -0.0146
+     Adam No Bias Optimized Avg Test: 0.5324
+     Adam No Bias Optimized Gen Gap: 0.0024
+     Adam No Bias Optimized Avg Time: 3.5315
+     Adam No Bias Gen Gap Improvement: -0.0014
+     Rmsprop Like Optimized Avg Test: 1.6767
+     Rmsprop Like Optimized Gen Gap: -0.0050
+     Rmsprop Like Optimized Avg Time: 3.5426
+     Rmsprop Like Gen Gap Improvement: 0.0011
+     Adamw Optimized Avg Test: 0.6522
+     Adamw Optimized Gen Gap: -0.0089
+     Adamw Optimized Avg Time: 3.5417
+     Adamw Gen Gap Improvement: -0.0071
+     Part2 Table: | Optimizer    | Val Loss at Budget |     Test Metric | Gen Gap | Time to ℓ (s) | # Grad Evals | # Func Evals | Steps to ℓ |
+|--------------|-------------------|-----------------|---------|-------------|--------|-------|-------|
+| sgd          | 1.3505 ± 0.0499 | 1.1989 ± 0.0375 | -0.0861 | 3.48 ± 0.01 | 204800 ± 0 | 200 ± 0 | 200 ± 0 |
+| sgd_momentum | 0.5696 ± 0.0011 | 0.5681 ± 0.0008 | 0.0005 | 3.49 ± 0.01 | 204800 ± 0 | 200 ± 0 | 200 ± 0 |
+| nesterov     | 0.5909 ± 0.0047 | 0.5872 ± 0.0036 | -0.0007 | 3.49 ± 0.00 | 204800 ± 0 | 200 ± 0 | 200 ± 0 |
+| adam         | 0.7680 ± 0.0252 | 0.7300 ± 0.0192 | -0.0161 | 3.53 ± 0.01 | 204800 ± 0 | 200 ± 0 | 200 ± 0 |
+| adam_no_bias | 0.6332 ± 0.0207 | 0.6233 ± 0.0202 | 0.0010 | 3.52 ± 0.01 | 204800 ± 0 | 200 ± 0 | 200 ± 0 |
+| rmsprop_like | 1.9456 ± 0.4252 | 1.9227 ± 0.4250 | -0.0039 | 3.53 ± 0.01 | 204800 ± 0 | 200 ± 0 | 200 ± 0 |
+| adamw        | 0.7677 ± 0.0245 | 0.7297 ± 0.0185 | -0.0161 | 3.53 ± 0.00 | 204800 ± 0 | 200 ± 0 | 200 ± 0 |
+
+     Best Baseline Optimizer: sgd (gen_gap=-0.086079)
+     Best Adam Family Optimizer: adam (gen_gap=-0.016128)
+     Overall Best Optimizer: sgd (gen_gap=-0.086079)
+     Regularization Table: | Regularizer     |            Val Loss |         Test Metric |  Gen Gap |        Time (s) |
+|-----------------|---------------------|---------------------|----------|-----------------|
+| baseline        | 0.593836 ± 0.021302 | 0.587966 ± 0.020742 | 0.002246 | 3.5277 ± 0.0140 |
+| l2              | 0.586597 ± 0.015041 | 0.581092 ± 0.014578 | 0.002300 | 3.5380 ± 0.0051 |
+| early_stopping  | 0.593836 ± 0.021302 | 0.587966 ± 0.020742 | 0.002246 | 3.5320 ± 0.0049 |
+| dropout         | 0.610441 ± 0.025101 | 0.603746 ± 0.024250 | 0.001230 | 3.8848 ± 0.0050 |
+| label_smoothing | 0.593836 ± 0.021302 | 0.587966 ± 0.020742 | 0.002246 | 3.5234 ± 0.0042 |
+| augmentation    | 0.593836 ± 0.021302 | 0.587966 ± 0.020742 | 0.002246 | 3.5244 ± 0.0073 |
+
+Best configurations:
+L2 weight decay: 1.00e-04
+Early stopping patience: 3
+Dropout probability: 0.100000
+     Combined Recipe Summary: 
+Combined Recipe Performance:
+Validation Loss: 0.593836 ± 0.021302
+Test Metric: 0.587966 ± 0.020742
+Generalization Gap: 0.002246
+Training Time: 3.5395 ± 0.0071s
+     Combined Recipe Hypothesis: 
+Hypothesis Test - Combined Recipe Performance:
+- Best Single Regularizer Gap: 0.001230
+- Combined Recipe Gap: 0.002246
+
+======================================================================
+Report Generated: 2025-10-22 01:45:12 EDT
+Log File: /Users/mmyron/Documents/ol/ol/logs
+======================================================================
