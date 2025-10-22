@@ -14,7 +14,7 @@ This project systematically investigates neural network optimization through thr
 2. **Part 2: Adam Ablations** - Analyze 7 optimizer variants (SGD, momentum, Nesterov, Adam, adam_no_bias, RMSProp-like, AdamW) with hyperparameter sensitivity analysis
 3. **Part 3: Targeted Regularization** - Evaluate individual and combined regularization techniques (L2, dropout, early stopping, label smoothing, feature masking)
 
-All experiments use fixed neural network architectures from the Supervised Learning assignment, with consistent evaluation budgets (3,000 function/gradient evaluations) across three random seeds for statistical reliability.
+All experiments use fixed neural network architectures from the Supervised Learning assignment, with consistent evaluation budgets (1,500 function/gradient evaluations) across three random seeds for statistical reliability.
 
 ---
 
@@ -118,7 +118,7 @@ python main.py
 # Edit main.py: set testing=True
 ```
 
-### Full Experiments (3 seeds, 3000 evals)
+### Full Experiments (3 seeds, 1500 evals)
 
 ```bash
 cd src
@@ -126,20 +126,20 @@ python main.py
 # Edit main.py: set testing=False
 ```
 
-**Runtime Estimates** (based on actual execution):
+**Runtime Estimates** (based on actual execution at 1500 evals):
 
--   **Total across all networks**: ~11.8 hours
+-   **Total across all networks**: ~5.9 hours
     -   Part 1 (Randomized Optimization): ~46%
     -   Part 2 (Adam Ablations): ~27%
     -   Part 3 (Targeted Regularization): ~27%
--   Hotels nn_2: ~40 minutes
-    -   Part 1: 16 min, Part 2: 12 min, Part 3: 12 min
--   Hotels nn_4: ~56 minutes
-    -   Part 1: 22 min, Part 2: 17 min, Part 3: 17 min
--   Accidents nn_2: ~4.7 hours
-    -   Part 1: 142 min, Part 2: 78 min, Part 3: 64 min
--   Accidents nn_4: ~5.5 hours
-    -   Part 1: 164 min, Part 2: 90 min, Part 3: 74 min
+-   Hotels nn_2: ~20 minutes
+    -   1: 8 min, 2: 6 min, 3: 6 min
+-   Hotels nn_4: ~28 minutes
+    -   1: 11 min, 2: 8.5 min, 3: 8.5 min
+-   Accidents nn_2: ~2.4 hours
+    -   1: 71 min, 2: 39 min, 3: 32 min
+-   Accidents nn_4: ~2.7 hours
+    -   1: 82 min, 2: 45 min, 3: 37 min
 
 ## Experimental Methodology
 
@@ -147,17 +147,18 @@ python main.py
 
 **Part 1: Randomized Optimization**
 
--   **Budget**: 3,000 function evaluations
+-   **Budget**: 1,500 function evaluations
 -   **Evaluation type**: Full validation set forward pass (17,428 samples for Hotels, 193,172 for Accidents)
--   **Cost per eval**: ~0.05s (Hotels), ~0.5s
+-   **Cost per eval**: ~0.05s (Hotels), ~0.5s (Accidents)
 -   **No gradients**: Black-box optimization only
 
 **Parts 2 & 3: Gradient-Based Optimization**
 
--   **Budget**: 3,000 gradient updates (not function evaluations)
+-   **Budget**: 1,500 gradient updates (not function evaluations)
 -   **Evaluation type**: Mini-batch forward pass + backward pass + parameter update
 -   **Batch size**: 64 (Hotels), 1024 (Accidents)
--   **Total gradient evaluations**: 3,000 updates × 64 batch size = 192,000 gradient computations
+-   **Cost per update**: ~2.3ms (Hotels)
+-   **Total gradient evaluations**: 1,500 updates × 64 batch size = 96,000 gradient computations
 
 ### Data Splits
 
@@ -187,7 +188,7 @@ All experiments run with 3 seeds: [42, 4242, 424242] - Torch manual seed set
 testing = False              # False for full experiments
 subsample = 0.1 if testing else None  # Data fraction
 seeds = [42] if testing else [42, 4242, 424242]  # Reproducibility
-max_evals = 500 if testing else 3000  # Budget
+max_evals = 500 if testing else 1500  # Budget
 ```
 
 **Hotels Configuration**:
@@ -336,6 +337,46 @@ GitHub Copilot, with Open AI's ChatGPT, Anthropic's Claude, and Xai's Grok were 
 -   Code refactoring (DRY principle, function extraction)
 
 All code was reviewed, verified, and tested. All experimental design, analysis, and conclusions are original work.
+
+---
+
+## Key Results Visualizations
+
+### Part 1: Randomized Optimization (Hotels nn_2, 1500 evals)
+
+**RHC vs SA vs GA Comparison**
+
+![Randomized Optimization Comparison](img/combined_comparison.png)
+
+_Figure 1: RHC converged consistently to ~0.495 loss, while SA plateaued early and GA showed high variance._
+
+### Part 2: Adam Ablations (Hotels nn_2, 1500 evals)
+
+**Optimizer Convergence Curves (Optimized Hyperparameters)**
+
+![Adam Ablations Convergence](img/cumulative_optimized_loss_curves_dotted.png)
+
+_Figure 2: Adam-family optimizers (adam, adam_no_bias, rmsprop_like, adamw) converged nearly identically. Learning rate 10× more important than optimizer choice._
+
+**Hyperparameter Sensitivity (adam_no_bias)**
+
+![Adam Sensitivity Mosaic](img/combined_sensitivity_mosaic.png)
+
+_Figure 3: Learning rate (α) dominates performance; β₁ and β₂ show minimal impact when α is well-tuned._
+
+### Part 3: Targeted Regularization (Hotels nn_2, 1500 evals)
+
+**Regularization Techniques Comparison**
+
+![Regularization Curves](img/cumulative_reg_curves.png)
+
+_Figure 4: Baseline (no regularization) achieved best performance. Dropout hurt performance; L2/early stopping/augmentation had zero effect._
+
+**Combined Recipe vs Individual Techniques**
+
+![Recipe Comparison](img/combined_recipe_comparison.png)
+
+_Figure 5: Combined regularization recipe identical to baseline - multiple regularizers interfere rather than complement._
 
 ---
 
