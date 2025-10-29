@@ -1,20 +1,15 @@
 import os, math
+from typing import Any, Dict, List, Optional, Union
 import matplotlib
 import matplotlib.pyplot as plt
-import seaborn as sns
-from PIL import Image, ImageDraw, ImageFont
 import numpy as np
-from sklearn import tree
-from sklearn.base import is_classifier
-from sklearn.calibration import LinearSVC, calibration_curve
-from sklearn.datasets import make_blobs
-from sklearn.metrics import ConfusionMatrixDisplay, auc, precision_recall_curve, roc_curve
-from sklearn.model_selection import cross_val_score
-from typing import Any, Dict, List, Optional, Union
+from PIL import Image, ImageDraw, ImageFont
+from sklearn.metrics import silhouette_samples, silhouette_score, adjusted_rand_score
+from sklearn.decomposition import PCA
 
 matplotlib.use('Agg')
 
-def plot_curve(x: Union[list, Any], y_list: list, labels: Optional[list[str]] = None, xlabel: str = "", ylabel: str = "", title: str = "", save_path: Optional[str] = None, marker: Optional[str] = None, colors: Optional[list[str]] = None, linestyles: Optional[list[str]] = None, xscale: str = 'linear', std: Optional[List[float]] = None, lower: Optional[List[float]] = None, upper: Optional[List[float]] = None, band_label: str = '± Std Dev'):
+def plot_curve(x: Union[list, Any], y_list: list, labels: Optional[list[str]] = None, xlabel: str = "", ylabel: str = "", title: str = "", save_path: Optional[str] = None, marker: Optional[Union[str, List[str]]] = None, colors: Optional[list[str]] = None, linestyles: Optional[list[str]] = None, xscale: str = 'linear', std: Optional[List[float]] = None, lower: Optional[List[float]] = None, upper: Optional[List[float]] = None, band_label: str = '± Std Dev'):
     '''
     plot curve with optional labels, colors, linestyles, xscale, grid, and save.
     supports stability bands via std (symmetric) or explicit lower/upper (e.g., for iqr).
@@ -30,6 +25,12 @@ def plot_curve(x: Union[list, Any], y_list: list, labels: Optional[list[str]] = 
     linestyles = linestyles or ['-'] * len(y_list)  # default solid lines
     labels = labels or [""] * len(y_list)  # changed: default to empty string per curve to match length and type
     
+    # Handle markers: if str, use for all; if list, use per curve
+    if isinstance(marker, list):
+        markers = marker
+    else:
+        markers = [marker] * len(y_list)
+    
     # check for per-curve x (list of sequences)
     if isinstance(x, list) and len(x) == len(y_list) and all(hasattr(xi, '__iter__') and not isinstance(xi, str) for xi in x):  # changed: added check for iterable xi (not scalar)
         for i, (x_i, y, lbl) in enumerate(zip(x, y_list, labels)):  # per-curve x
@@ -38,7 +39,7 @@ def plot_curve(x: Union[list, Any], y_list: list, labels: Optional[list[str]] = 
                 plt.xticks(x_pos, [str(v) for v in x_i])
             else:
                 x_pos = x_i
-            plt.plot(x_pos, y, label=lbl, marker=marker, color=colors[i], linestyle=linestyles[i])
+            plt.plot(x_pos, y, label=lbl, marker=markers[i], color=colors[i], linestyle=linestyles[i])
     else:  # single x for all
         if any(isinstance(v, str) or v is None for v in x):  # type: ignore
             x_pos = np.arange(len(x))  # type: ignore
@@ -46,7 +47,7 @@ def plot_curve(x: Union[list, Any], y_list: list, labels: Optional[list[str]] = 
         else:
             x_pos = x  # type: ignore
         for i, (y, lbl) in enumerate(zip(y_list, labels)):
-            plt.plot(x_pos, y, label=lbl, marker=marker, color=colors[i], linestyle=linestyles[i])
+            plt.plot(x_pos, y, label=lbl, marker=markers[i], color=colors[i], linestyle=linestyles[i])
         
     # add stability bands for first y if provided
     if len(y_list) > 0:
@@ -76,7 +77,7 @@ def plot_curve(x: Union[list, Any], y_list: list, labels: Optional[list[str]] = 
     plt.xlabel(xlabel)
     plt.ylabel(ylabel if ylabel else "Loss")
     plt.title(title)
-    plt.xscale(xscale)
+    plt.xscale(xscale) # type: ignore
     plt.grid(True)
     
     if any(lbl is not None for lbl in labels):  # changed: show legend only if any non-None labels
@@ -86,19 +87,6 @@ def plot_curve(x: Union[list, Any], y_list: list, labels: Optional[list[str]] = 
     else:
         plt.show()
     plt.close()
-
-def plot_learning_curve(train_sizes, train_scores, val_scores, scoring, title="Learning Curve", save_path=None):
-    scoring_label = "Weighted F1" if scoring == "f1_weighted" else "R2"
-    plot_curve(
-        x=train_sizes,
-        y_list=[train_scores, val_scores],
-        labels=[f"Train {scoring_label}", f"Validation {scoring_label}"],
-        xlabel="Training Set Size",
-        ylabel=f"{scoring_label} Score",
-        title=title,
-        save_path=f"{save_path}/learning_curve.png" if save_path else None,
-        marker="o"
-    )
 
 
 def stitch_images(img_dir, title=""):
@@ -131,110 +119,6 @@ def stitch_images(img_dir, title=""):
     out_path = os.path.join(img_dir, filename)
     if os.path.exists(out_path): os.remove(out_path)
     out.save(out_path)
-
-def plot_heatmaps(data, labels, x_labels, title, save_path):
-    plt.figure(figsize=(10, 6))
-    sns.heatmap(data, xticklabels=x_labels, yticklabels=labels, cmap='viridis')
-    plt.title(title)
-    plt.savefig(save_path)
-    plt.close()
-
-
-def plot_combined_heatmap(
-    data_dict: Dict[str, np.ndarray],
-    alpha_grid: List[float],
-    beta1_grid: List[float],
-    beta2_grid: List[float],
-    optimizers: List[str],
-    title: str = "",
-    save_path: Optional[str] = None,
-    cmap: str = 'viridis'
-):
-    '''
-    create a single heatmap combining alphas (rows), betas (columns segmented by optimizer).
-    flattens beta1 and beta2 into one axis with optimizer-prefixed labels.
-    '''
-    # Build combined x labels and collect per-optimizer data blocks.
-    x_labels = []
-    per_opt_blocks = []
-
-    for opt in optimizers:
-        # prefer direct key if present
-        direct = data_dict.get(opt)
-        if direct is not None:
-            block = np.asarray(direct, dtype=float)
-            # assume block shape matches (len(alpha_grid), Ncols)
-            per_opt_blocks.append(block)
-            # create generic labels for these columns
-            for col_idx in range(block.shape[1]):
-                x_labels.append(f"{opt} col{col_idx}")
-            continue
-
-        # otherwise look for suffixed keys produced by ablation analysis
-        b1_key = f"{opt}_alpha_b1"
-        b2_key = f"{opt}_alpha_b2"
-        b1 = data_dict.get(b1_key)
-        b2 = data_dict.get(b2_key)
-
-        blocks = []
-        # beta1 block (may be missing for rmsprop_like)
-        if b1 is not None:
-            b1_arr = np.asarray(b1, dtype=float)
-            blocks.append(b1_arr)
-            for b in beta1_grid:
-                x_labels.append(f"{opt} β1={b:.3f}")
-
-        # beta2 block
-        if b2 is not None:
-            b2_arr = np.asarray(b2, dtype=float)
-            blocks.append(b2_arr)
-            for b in beta2_grid:
-                x_labels.append(f"{opt} β2={b:.3f}")
-
-        if blocks:
-            # horizontally concatenate available blocks for this optimizer
-            try:
-                block = np.hstack(blocks)
-            except Exception:
-                # if shapes don't align, try padding/trimming to alpha_grid length
-                aligned = []
-                for bb in blocks:
-                    bb_arr = np.asarray(bb, dtype=float)
-                    if bb_arr.shape[0] != len(alpha_grid):
-                        # try to reshape or broadcast
-                        try:
-                            bb_arr = np.tile(bb_arr.reshape(-1, bb_arr.shape[1]) if bb_arr.ndim == 2 else bb_arr.reshape(-1, 1), (len(alpha_grid), 1))
-                        except Exception:
-                            # last resort: create zeros
-                            bb_arr = np.zeros((len(alpha_grid), bb_arr.shape[1] if bb_arr.ndim == 2 else 1))
-                    aligned.append(bb_arr)
-                block = np.hstack(aligned)
-            per_opt_blocks.append(block)
-        else:
-            # no data for this optimizer; skip but keep a placeholder label group
-            # (we won't add any columns for this optimizer)
-            continue
-
-    if not per_opt_blocks:
-        raise ValueError("No optimizer data found in data_dict for provided optimizers.")
-
-    # combine data arrays horizontally (columns for betas per optimizer)
-    combined_data = np.hstack(per_opt_blocks)
-
-    # plot the combined heatmap
-    fig, ax = plt.subplots(figsize=(12, 6))
-    sns.heatmap(combined_data, ax=ax, xticklabels=x_labels, yticklabels=[f"{a:.0e}" for a in alpha_grid], cmap=cmap, annot=False, fmt=".2f")
-    ax.set_xlabel("Betas by Optimizer")
-    ax.set_ylabel("Alphas")
-    ax.set_title(title)
-    plt.xticks(rotation=45, ha='right')  # rotate labels for readability
-    plt.tight_layout()
-
-    if save_path:
-        plt.savefig(save_path)
-    else:
-        plt.show()
-    plt.close()
 
 
 def plot_sensitivity_subplots(
@@ -276,3 +160,98 @@ def plot_sensitivity_subplots(
     plt.close()
     
     print(f"\nSaved sensitivity subplots to: {save_path}")
+
+
+
+
+def plot_silhouette(X, labels, title="Silhouette Plot", save_path=None):
+    """
+    Plot silhouette scores for clustering evaluation.
+    """
+    silhouette_avg = silhouette_score(X, labels)
+    sample_silhouette_values = silhouette_samples(X, labels)
+    
+    fig, ax = plt.subplots(figsize=(8, 6))
+    y_lower = 10
+    for i in range(max(labels) + 1):
+        ith_cluster_silhouette_values = np.array(sample_silhouette_values[labels == i])  # type:ignore
+        ith_cluster_silhouette_values = np.sort(ith_cluster_silhouette_values)
+        size_cluster_i = ith_cluster_silhouette_values.shape[0]
+        y_upper = y_lower + size_cluster_i
+        color = plt.cm.nipy_spectral(float(i) / (max(labels) + 1))  # type:ignore
+        ax.fill_betweenx(np.arange(y_lower, y_upper), 0, ith_cluster_silhouette_values, facecolor=color, edgecolor=color, alpha=0.7)  # type: ignore
+        ax.text(-0.05, y_lower + 0.5 * size_cluster_i, str(i))
+        y_lower = y_upper + 10
+    
+    ax.set_title(f"{title} (Avg Score: {silhouette_avg:.2f})")
+    ax.set_xlabel("Silhouette Coefficient Values")
+    ax.set_ylabel("Cluster Label")
+    ax.axvline(x=float(silhouette_avg), color="red", linestyle="--")
+    ax.set_yticks([])
+    ax.set_xlim(-0.1, 1)
+    if save_path:
+        plt.savefig(save_path)
+    else:
+        plt.show()
+    plt.close()
+
+
+def plot_scatter(x_list, y_list, labels=None, xlabel="", ylabel="", title="", save_path=None, colors=None, alpha=0.7, figsize=(8, 6)):
+    """
+    Generic scatter plot function for multiple series.
+    """
+    plt.figure(figsize=figsize)
+    
+    colors = colors or ['blue'] * len(x_list)
+    labels = labels or [""] * len(x_list)
+    
+    for i, (x, y, lbl, col) in enumerate(zip(x_list, y_list, labels, colors)):
+        plt.scatter(x, y, label=lbl, color=col, alpha=alpha)
+    
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.title(title)
+    plt.legend()
+    plt.grid(True)
+    if save_path:
+        plt.savefig(save_path)
+    else:
+        plt.show()
+    plt.close()
+
+
+def plot_cluster_scatter(X, labels, method='pca', title="Cluster Scatter Plot", save_path=None):
+    """
+    Scatter plot of clusters after dimensionality reduction to 2D.
+    """
+    if X.shape[1] > 2:
+        reducer = PCA(n_components=2, random_state=42)
+        X_reduced = reducer.fit_transform(X)
+    else:
+        X_reduced = X
+    
+    unique_labels = np.unique(labels)
+    x_list = []
+    y_list = []
+    labels_list = []
+    colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan'][:len(unique_labels)]
+    
+    for k, col in zip(unique_labels, colors):
+        class_member_mask = (labels == k)
+        xy = X_reduced[class_member_mask]
+        x_list.append(xy[:, 0])
+        y_list.append(xy[:, 1])
+        labels_list.append(f'Cluster {k}')
+    
+    plot_scatter(
+        x_list=x_list,
+        y_list=y_list,
+        labels=labels_list,
+        xlabel=f'{method.upper()} Component 1',
+        ylabel=f'{method.upper()} Component 2',
+        title=title,
+        save_path=save_path,
+        colors=colors
+    )
+
+

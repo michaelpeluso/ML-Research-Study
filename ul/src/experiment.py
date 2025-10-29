@@ -3,9 +3,13 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import torch
 
-from clustering.kmeans import run_em, run_kmeans
+from clustering.clustering import Clustering
 from utils.data_processing import load_or_process_data, wrap_into_loaders
 from utils.logger import MLLogger
+from utils.plotter import plot_curve, plot_silhouette, plot_scatter, plot_cluster_scatter
+from sklearn.cluster import KMeans
+from sklearn.mixture import GaussianMixture
+from sklearn.metrics import silhouette_score, adjusted_rand_score
 
 print(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
 
@@ -16,6 +20,7 @@ class Experiment:
         self.target = target
         self.method = method
         self.save_path = os.path.join(os.environ['ROOT'], f"figures/{self.dataset}")
+        os.makedirs(self.save_path, exist_ok=True)
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -45,23 +50,15 @@ class Experiment:
         return train_loader, val_loader, test_loader
 
 
-    # Clustering on raw data
-    def run_kmeans(self, k_range=(2, 10), X_train=None, seeds=[42]):
-        if X_train is None: X_train, _, _, _, _, _ = self.get_data()
-        
-        for seed in seeds:
-            for k in range(k_range[0], k_range[1] + 1):
-                print(run_kmeans(X_train, n_clusters=k, random_state=seed))
+    def run_kmeans(self, k_range=(2, 10), stability_runs=10):
+        """Run K-Means clustering on raw data."""
+        X_train, _, _, _, _, _ = self.get_data()
+        clustering = Clustering(self.ml_logger, self.dataset, self.save_path)
+        return clustering.run_kmeans(X_train, k_range, stability_runs)
 
-
-    # Dimensionality reduction on raw data
-    def run_em(self, k_range=(2, 10), X_train=None, seeds=[42]):
-        if X_train is None: X_train, _, _, _, _, _ = self.get_data()
-        
-        for seed in seeds:
-            for k in range(k_range[0], k_range[1] + 1):
-                print(run_em(X_train, n_components=k, random_state=seed))
-
+    # Clustering on raw data - EM
+    def run_em_step1(self, k_range=(2, 10), chosen_components=5, stability_runs=10):
+        return None
 
     # Clustering on dimensionality reduced data
     def run_step3(self, dr_method, cluster_method, k):

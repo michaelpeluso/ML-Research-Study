@@ -12,10 +12,10 @@ from experiment import Experiment
 def main():
     
     # L2 testing
-    testing = False
+    testing = True
     subsample = 0.1 if testing else None
-    seeds = [42] if testing else [42, 4242, 424242]
     max_evals = 500 if testing else 3000
+    seed = 42
     
     experiments = [
         {
@@ -50,8 +50,10 @@ def main():
         method=config['method']
     )
     X_train, X_val, X_test, y_train, y_val, y_test = exp.get_data(subsample=config['subsample'])
-    exp.run_kmeans((2, 10), X_train, seeds)
-    exp.run_em((2, 10), X_train, seeds)
+    exp.run_kmeans((4, 8), 10)
+    #exp.run_em((2, 10), X_train, seed)
+
+
 
 if __name__ == "__main__":
     main()
