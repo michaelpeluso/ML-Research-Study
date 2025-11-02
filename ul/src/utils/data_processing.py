@@ -49,8 +49,11 @@ def load_or_process_data(dataset: str, target: str, method: str, subsample: floa
         mem_before = df.memory_usage(deep=True).sum() / (1024 ** 2)
         cleaned_df = clean_hotels(df) if dataset == "hotels" else clean_accidents(df)
         cleaned_df = general_clean(cleaned_df, target)
+        # Winsorize numeric columns to cap extreme outliers (default 1%/99% bounds)
+        numeric_cols = cleaned_df.select_dtypes(include=[np.number]).columns.tolist()
+        if numeric_cols:cleaned_df = winsorize_df(cleaned_df, numeric_cols, lower=0.01, upper=0.99)
         total_cleaned = len(cleaned_df)
-        if method == "regression": 
+        if method == "regression":
             cleaned_df['Duration_Seconds'] = np.log1p(cleaned_df['Duration_Seconds']) # log(1 + x) to handle zeros/small values
         mem_after = cleaned_df.memory_usage(deep=True).sum() / (1024 ** 2)
 
@@ -187,6 +190,21 @@ def general_clean(df, target):
     return df
 
 
+def winsorize_df(df: pd.DataFrame, cols: list[str] | None = None, lower: float = 0.01, upper: float = 0.99) -> pd.DataFrame:
+    if cols is None:
+        cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    df = df.copy()
+    for c in cols:
+        if c not in df.columns:
+            continue
+        try:
+            lo = df[c].quantile(lower)
+            hi = df[c].quantile(upper)
+            df[c] = df[c].clip(lower=lo, upper=hi)
+        except Exception:
+            continue
+    return df
+
 
 # user selected dataset with specific drops
 def clean_hotels(df):
@@ -211,7 +229,6 @@ def clean_accidents(df) :
 
     # derive duration
     df['Duration_Seconds'] = (df['End_Time'] - df['Start_Time']).dt.total_seconds()
-    df = df[(df['Duration_Seconds'] > 0) & (df['Duration_Seconds'] <= df['Duration_Seconds'].quantile(0.95))]
     df['Duration_Seconds'] = df['Duration_Seconds'].astype('float32')
     df = df.drop(columns=['Start_Time', 'End_Time'])
 
@@ -285,3 +302,16 @@ def subsample_dataset(df: pd.DataFrame, target: str, subsample_frac: float, seed
                 lambda x: x.sample(frac=subsample_frac, random_state=seed)
             ).reset_index(drop=True)
     return df
+
+
+def sample_fit_labels(X: np.ndarray, labels, sample_size: int | None = None, seed: int = 42):
+    """ Deterministically sample up to `sample_size` rows from a numpy array X and labels. """
+    if sample_size is None:
+        return X, np.array(labels), None
+    n = X.shape[0]
+    if n <= sample_size:
+        return X, np.array(labels), None
+    rng = np.random.RandomState(seed)
+    idx = rng.choice(n, sample_size, replace=False)
+    return X[idx], np.array(labels)[idx], idx
+    

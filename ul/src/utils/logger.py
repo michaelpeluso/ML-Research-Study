@@ -98,6 +98,46 @@ class MLLogger:
             self.current_logs.append({"step_info": {}})
         self.current_logs[-1]["step_info"]["learning_curve_points"] = curve_data
 
+    def _format_step_data(self, f, data, indent=0):
+        """Recursively format and write step data with proper indentation."""
+        indent_str = "  " * indent
+        
+        for key, value in data.items():
+            # Handle both string and non-string keys
+            if isinstance(key, str):
+                formatted_key = key.replace('_', ' ').title()
+            else:
+                formatted_key = str(key)
+            
+            if value is None:
+                continue
+            elif isinstance(value, dict):
+                f.write(f"{indent_str}{formatted_key}:\n")
+                self._format_step_data(f, value, indent + 1)
+            elif isinstance(value, list):
+                if not value:
+                    f.write(f"{indent_str}{formatted_key}: []\n")
+                elif len(value) <= 10 and all(isinstance(x, (int, float, str)) for x in value):
+                    # Short list of primitives - show inline
+                    f.write(f"{indent_str}{formatted_key}: {value}\n")
+                else:
+                    # Long list or complex items
+                    f.write(f"{indent_str}{formatted_key}: [{len(value)} items]\n")
+                    for i, item in enumerate(value):
+                        if isinstance(item, dict):
+                            f.write(f"{indent_str}  [{i}]:\n")
+                            self._format_step_data(f, item, indent + 2)
+                        else:
+                            f.write(f"{indent_str}  [{i}]: {item}\n")
+            elif isinstance(value, tuple):
+                f.write(f"{indent_str}{formatted_key}: {value}\n")
+            elif isinstance(value, float):
+                f.write(f"{indent_str}{formatted_key}: {value:.4f}\n")
+            elif isinstance(value, int):
+                f.write(f"{indent_str}{formatted_key}: {value:,}\n")
+            else:
+                f.write(f"{indent_str}{formatted_key}: {value}\n")
+
     def generate_log_report(self, output_file, part:int=0):
         """generate a detailed report from current logs, with analysis summary at top aggregating all data."""
         if not output_file:
@@ -113,77 +153,6 @@ class MLLogger:
             f.write("ML EXPERIMENT DETAILED REPORT\n")
             f.write("=" * 70 + "\n")
             f.write(f"Total Duration: {self.metrics.get('total_duration', 'N/A')}\n\n")
-
-            # Optimization Summary for Part 1
-            if part == 1:
-                f.write("RANDOM OPTIMIZATION SUMMARY TABLE\n")
-                f.write("-" * 40 + "\n")
-                table_str = self.metrics.get('part1_table', 'No table available')
-                f.write(table_str + "\n\n")
-            # Optimizer Ablations Summary for Part 2
-            if part == 2:
-                f.write("OPTIMIZER ABLATIONS SUMMARY TABLE\n")
-                f.write("-" * 40 + "\n")
-                table_str = self.metrics.get('part2_table', 'No table available')
-                f.write(table_str + "\n\n")
-
-            # Regularization Summary for Part 3
-            if part == 3:
-                f.write("REGULARIZATION SUMMARY TABLE\n")
-                f.write("-" * 40 + "\n")
-                table_str = self.metrics.get('regularization_table', 'No table available')
-                f.write(table_str + "\n\n")
-            
-            if part == 1:
-                # For RO: show parameter budget, convergence, and algorithm-specific info
-                for log in self.current_logs:
-                    if log.get('step') in ["Randomized Hill Climbing", "Simulated Annealing", "Genetic Algorithm"]:
-                        info = log['step_info']
-                        algo = log['step']
-                        f.write(f"{algo}:\n")
-                        f.write(f"  Trainable Parameters: {info.get('parameters', 'N/A')}\n")
-                        f.write(f"  Budget: {info.get('max_evals', 'N/A'):,} evaluations\n")
-                        f.write(f"  Used: {info.get('evals', 'N/A'):,} ({info.get('evals', 0) / info.get('max_evals', 1) * 100:.1f}% of budget)\n")
-                        f.write(f"  Initial Loss: {info.get('initial_loss', 'N/A')}\n")
-                        f.write(f"  Final Loss: {info.get('best_loss', 'N/A')}\n")
-                        improvement = info.get('initial_loss', 0) - info.get('best_loss', 0)
-                        f.write(f"  Improvement: {improvement:.4f} ({improvement / info.get('initial_loss', 1) * 100:.1f}%)\n")
-                        
-                        # Algorithm-specific details
-                        if algo == "Randomized Hill Climbing":
-                            f.write(f"  Restarts: {info.get('restarts', 'N/A')}\n")
-                            f.write(f"  Decay Rate: {info.get('decay_rate', 'N/A'):.4f}\n")
-                        elif algo == "Simulated Annealing":
-                            f.write(f"  Initial Temp: {info.get('initial_temp', 'N/A'):.4f}\n")
-                            f.write(f"  Final Temp: {info.get('final_temp', 'N/A'):.6f}\n")
-                            f.write(f"  Cooling Rate: {info.get('cooling_rate', 'N/A'):.4f}\n")
-                        elif algo == "Genetic Algorithm":
-                            f.write(f"  Generations: {info.get('generation_count', 'N/A')}\n")
-                            f.write(f"  Population Size: {info.get('pop_size', 'N/A')}\n")
-                            f.write(f"  Mutation Rate: {info.get('mutation_rate', 'N/A'):.2f}\n")
-                        f.write("\n")
-            elif part == 2:
-                # For Adam ablations
-                key_metrics = {k: v for k, v in self.metrics.items() if any(sub in k for sub in ['avg_steps_to_l', 'avg_test_loss', 'test_metric'])}
-                for k, v in key_metrics.items():
-                    f.write(f"{k.replace('_', ' ').title()}: {v}\n")
-            elif part == 3:
-                # For Regularization: show best technique and combined results
-                f.write("Regularization Impact:\n")
-                # Show combined recipe summary if available
-                combined_summary = self.metrics.get('combined_recipe_summary', '')
-                if combined_summary:
-                    f.write(f"{combined_summary}\n\n")
-                # Show hypothesis result
-                hypothesis = self.metrics.get('combined_recipe_hypothesis', '')
-                if hypothesis:
-                    f.write(f"Hypothesis Result:\n{hypothesis}\n")
-            else:
-                # Generic fallback
-                key_metrics = {k: v for k, v in self.metrics.items() if any(sub in k for sub in ['best_loss', 'test_metric'])}
-                for k, v in key_metrics.items():
-                    f.write(f"{k.replace('_', ' ').title()}: {v}\n")
-            f.write("\n")
 
             # system information
             sys_info = self.experiment_context.get('system_info', {})
@@ -206,74 +175,31 @@ class MLLogger:
             f.write(f"Subsample: {ctx.get('subsample', 'N/A')}\n")
             f.write("\n")
 
-            # data analysis
-            data_log = next((log for log in self.current_logs if log.get('step') == 'Load Data' and 'step_info' in log), None)
-            if data_log and data_log['step_info']:
-                f.write("DATA ANALYSIS\n")
-                f.write("-" * 30 + "\n")
-                step_info = data_log['step_info']
-                f.write(f"Initial Rows: {step_info.get('n_loaded_rows', 0):,}\n")
-                f.write(f"Rows After Cleaning: {step_info.get('n_cleaned_rows', 0):,}\n")
-                f.write(f"Training Set: {step_info.get('train_shape', '0 x 0')}\n")
-                f.write(f"Validation Set: {step_info.get('validation_shape', '0 x 0')}\n")
-                f.write(f"Test Set: {step_info.get('test_shape', '0 x 0')}\n")
-                f.write(f"Memory Before Cleaning: {step_info.get('memory_before_clean', 'N/A')}\n")
-                f.write(f"Memory After Cleaning: {step_info.get('memory_after_clean', 'N/A')}\n")
-                f.write(f"Memory Reduction: {step_info.get('memory_reduction', 'N/A')}\n")  # changed: added to detailed
-                if step_info.get('target_distribution'):
-                    f.write("Target Distribution:\n")
-                    total = sum(step_info['target_distribution'].values())
-                    for class_name, count in step_info['target_distribution'].items():
-                        f.write(f"  {class_name}: {count:,} ({count/total*100:.1f}%)\n")
-                f.write("\n")
-
-            # detailed step analysis
-            f.write("DETAILED STEP ANALYSIS\n")
-            f.write("-" * 30 + "\n")
+            # all steps - uniform formatting
             for i, log in enumerate(self.current_logs, 1):
-                # skip logs without 'step' key (e.g., metric-only logs)
                 if 'step' not in log:
                     continue
-                f.write(f"{i}. {log['step'].upper()}\n")
-                f.write(f"   Status: {log['status'].upper()}\n")
-                f.write(f"   Timestamp: {log['timestamp']}\n")
-                f.write(f"   Duration: {log['performance']['duration_seconds']:.4f} seconds\n")
-                f.write(f"   Memory Change: {log['performance']['memory_diff_mb']:+.2f} MB\n")
-                f.write(f"   Peak Memory: {log['performance']['peak_memory_mb']:.2f} MB\n")
-                duration = log['performance']['duration_seconds']
-                perf = "Very Fast" if duration < 0.1 else "Fast" if duration < 2 else "Moderate" if duration < 10 else "Slow"
-                f.write(f"   Performance: {perf}\n")
-                if log['step_info']:
-                    f.write("   Step Details:\n")
-                    # Exclude metrics that appear in KEY METRICS or summary tables
-                    exclude_keys = {
-                        # Summary metrics
-                        'parameters', 'max_evals', 'evals', 'best_loss', 'initial_loss',
-                        'training_duration', 'single_eval_duration', 'history',
-                        # RHC specific
-                        'restarts', 'decay_rate', 'restart_losses',
-                        # SA specific
-                        'initial_temp', 'final_temp', 'cooling_rate',
-                        # GA specific  
-                        'generation_count', 'pop_size', 'mutation_rate'
-                    }
-                    for k, v in log['step_info'].items():
-                        # Skip excluded keys and restart_/generation_ prefixes
-                        if k in exclude_keys or k.startswith('restart_') or k.startswith('generation_'):
-                            continue
-                        if v is not None:
-                            if isinstance(v, int):
-                                f.write(f"     {k.replace('_', ' ').title()}: {v}\n")
-                            elif isinstance(v, float):
-                                f.write(f"     {k.replace('_', ' ').title()}: {v:.4f}\n")
-                            elif isinstance(v, dict):
-                                f.write(f"     {k.replace('_', ' ').title()}:\n")
-                                for sub_k, sub_v in v.items():
-                                    f.write(f"       {sub_k}: {sub_v}\n")
-                            elif isinstance(v, list):
-                                f.write(f"     {k.replace('_', ' ').title()}: {len(v)} items\n")
-                            else:
-                                f.write(f"     {k.replace('_', ' ').title()}: {v}\n")
+                    
+                f.write("=" * 70 + "\n")
+                f.write(f"STEP {i}: {log['step'].upper()}\n")
+                f.write("=" * 70 + "\n")
+                f.write(f"Status: {log['status'].upper()}\n")
+                f.write(f"Timestamp: {log['timestamp']}\n")
+                f.write(f"Duration: {log['performance']['duration_seconds']:.4f} seconds\n")
+                f.write(f"Memory Change: {log['performance']['memory_diff_mb']:+.2f} MB\n")
+                f.write(f"Peak Memory: {log['performance']['peak_memory_mb']:.2f} MB\n")
+                f.write(f"--\n")
+                
+                
+                if log.get('error'):
+                    f.write(f"Error: {log['error']}\n")
+                
+                f.write("\n")
+                
+                # print all step data
+                if log.get('step_info'):
+                    self._format_step_data(f, log['step_info'], indent=0)
+                
                 f.write("\n")
 
             # footer
@@ -284,5 +210,8 @@ class MLLogger:
 
         print(f"Detailed report saved to: {output_file}")
 
-# global instance
-ml_logger = MLLogger()
+
+# print overload to add time since program start and since last print
+_program_start_time = time.perf_counter()
+def print_t(*args):
+    print(f"{time.perf_counter() - _program_start_time:.2f}s | ", *args)

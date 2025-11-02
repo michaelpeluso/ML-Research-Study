@@ -4,7 +4,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from sklearn.metrics import silhouette_samples, silhouette_score, adjusted_rand_score
+from sklearn.metrics import adjusted_rand_score
 from sklearn.decomposition import PCA
 
 matplotlib.use('Agg')
@@ -83,26 +83,135 @@ def plot_curve(x: Union[list, Any], y_list: list, labels: Optional[list[str]] = 
     if any(lbl is not None for lbl in labels):  # changed: show legend only if any non-None labels
         plt.legend()
     if save_path:
-        plt.savefig(save_path)
+        plt.savefig(save_path, dpi=300)
     else:
         plt.show()
     plt.close()
 
 
-def stitch_images(img_dir, title=""):
-    filename = "_plots_stitched.png"
-    files = sorted(f for f in os.listdir(img_dir) if f.endswith(".png") and f != filename)
-    imgs = [Image.open(os.path.join(img_dir, f)).convert("RGB") for f in files]
+def plot_dual_axis(x: Union[list, Any], 
+                   y_left: Union[list, list[list]], 
+                   y_right: Union[list, list[list], None] = None,
+                   left_labels: Optional[list[str]] = None,
+                   right_labels: Optional[list[str]] = None,
+                   left_ylabel: str = "",
+                   right_ylabel: str = "",
+                   xlabel: str = "",
+                   title: str = "",
+                   save_path: Optional[str] = None,
+                   left_colors: Optional[list[str]] = None,
+                   right_colors: Optional[list[str]] = None,
+                   left_markers: Optional[list[str]] = None,
+                   right_markers: Optional[list[str]] = None,
+                   vline_x: Optional[float] = None,
+                   vline_label: Optional[str] = None):
+    """
+    Plot multiple series on left and/or right axes with dual y-axes.
+    
+    Args:
+        vline_x: Optional x-value for vertical line (e.g., chosen_k)
+        vline_label: Optional label for the vertical line
+    """
+    plt.figure(figsize=(8, 5), dpi=300)
+    ax_left = plt.gca()
+    
+    # optional vertical line
+    if vline_x is not None:
+        ax_left.axvline(x=vline_x, color='red', linewidth=1, 
+                       alpha=0.7, zorder=1, label=vline_label or f'x={vline_x}')
+
+    # Normalize y_left to list of lists
+    if isinstance(y_left[0], (int, float)) if y_left else False:
+        y_left_list = [y_left]
+    else:
+        y_left_list = y_left
+
+    # Normalize y_right to list of lists
+    if y_right is not None:
+        if isinstance(y_right[0], (int, float)) if y_right else False:
+            y_right_list = [y_right]
+        else:
+            y_right_list = y_right
+    else:
+        y_right_list = []
+
+    # Default colors, markers, and linestyles
+    left_colors = left_colors or ['blue'] * len(y_left_list)
+    right_colors = right_colors or ['orange'] * len(y_right_list)
+    left_markers = left_markers or ['o'] * len(y_left_list)
+    right_markers = right_markers or ['o'] * len(y_right_list)
+    left_linestyles = ['-', '-.', ':', '--'][:len(y_left_list)]
+    right_linestyles = ['-', '-.', ':', '--'][:len(y_right_list)]
+    left_labels = left_labels or [f"Left {i+1}" for i in range(len(y_left_list))]
+    right_labels = right_labels or [f"Right {i+1}" for i in range(len(y_right_list))]
+
+    # Integer ticks for x-axis
+    if isinstance(x, (list, np.ndarray)) and all(isinstance(v, int) for v in x):
+        ax_left.set_xticks(x)
+
+    # Plot left axis series
+    lines_left = []
+    for i, (y, color, marker, lbl, ls) in enumerate(zip(y_left_list, left_colors, left_markers, left_labels, left_linestyles)):
+        line, = ax_left.plot(x, y, color=color, marker=marker, label=lbl, linewidth=2, linestyle=ls, zorder=3)
+        lines_left.append(line)
+    ax_left.set_ylabel(left_ylabel or " / ".join(left_labels), color='black', fontweight='bold')
+    ax_left.tick_params(axis='y', labelcolor='blue', colors='blue')
+    ax_left.spines['left'].set_color('blue')
+    ax_left.spines['left'].set_linewidth(2)
+
+    # Plot right axis series
+    lines_right = []
+    if y_right_list:
+        ax_right = ax_left.twinx()
+        for i, (y, color, marker, lbl, ls) in enumerate(zip(y_right_list, right_colors, right_markers, right_labels, right_linestyles)):
+            line, = ax_right.plot(x, y, color=color, marker=marker, label=lbl, linewidth=2, linestyle=ls, zorder=3)
+            lines_right.append(line)
+        ax_right.set_ylabel(right_ylabel or " / ".join(right_labels), color='black', fontweight='bold')
+        ax_right.tick_params(axis='y', labelcolor='orange', colors='orange')
+        ax_right.spines['right'].set_color('orange')
+        ax_right.spines['right'].set_linewidth(2)
+
+    # Labels and legend
+    ax_left.set_xlabel(xlabel)
+    plt.title(title)
+    
+    all_lines = lines_left + lines_right
+    all_labels = left_labels + right_labels
+    ax_left.legend(all_lines, all_labels)
+
+    plt.grid(True)
+    if save_path:
+        plt.savefig(save_path, dpi=300)
+    else:
+        plt.show()
+    plt.close()
+
+
+def stitch_specific_images(image_paths, title="", output_path=None):
+    """
+    Stitch specific images from given paths into a single image.
+    """
+    if not image_paths:
+        return
+    
+    # Load images
+    imgs = []
+    for path in image_paths:
+        if os.path.exists(path):
+            imgs.append(Image.open(path).convert("RGB"))
+        else:
+            print(f"Warning: Image not found: {path}")
+    
+    if not imgs:
+        return
     
     n = len(imgs)
-    if n == 0: return
     cols = math.ceil(math.sqrt(n))
     rows = math.ceil(n / cols)
     w = min(i.width for i in imgs)
     h = min(i.height for i in imgs)
     imgs = [im.resize((w, h), Image.LANCZOS) for im in imgs] # type: ignore
 
-    
     title_h = 100
     out = Image.new("RGB", (cols * w, rows * h + title_h), "white")
     draw = ImageDraw.Draw(out)
@@ -112,77 +221,71 @@ def stitch_images(img_dir, title=""):
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
     draw.text(((cols * w - tw) // 2, 40), title, fill="black", font=font)
     
+    bbox = draw.textbbox((0,0), title)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    draw.text(((cols * w - tw) // 2, 40), title, fill="black")
+    
     for idx, im in enumerate(imgs):
         r, c = divmod(idx, cols)
         out.paste(im, (c * w, r * h + title_h))
     
-    out_path = os.path.join(img_dir, filename)
-    if os.path.exists(out_path): os.remove(out_path)
-    out.save(out_path)
-
-
-def plot_sensitivity_subplots(
-    sensitivity_data: List[Dict[str, Any]],
-    overall_title: str,
-    save_path: str,
-    figsize: tuple = (15, 10),
-    dpi: int = 150
-):
-    num_plots = len(sensitivity_data)    
-    n_cols = min(3, num_plots)
-    n_rows = (num_plots + n_cols - 1) // n_cols  
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
+    # Determine output path
+    if output_path is None:
+        # Save next to the first image
+        first_dir = os.path.dirname(image_paths[0])
+        output_path = os.path.join(first_dir, "_stitched.png")
     
-    # Handle single subplot case
-    if num_plots == 1:
-        axes = np.array([axes])
-    axes = axes.flatten()
+    # Remove existing file if it exists
+    if os.path.exists(output_path):
+        os.remove(output_path)
     
-    # Plot each sensitivity analysis
-    for i, data in enumerate(sensitivity_data):
-        ax = axes[i]
-        color = data.get('color', f'C{i}')
-        
-        ax.plot(data['x'], data['y'], 'o-', color=color, linewidth=2, markersize=6)
-        ax.set_xlabel(data['xlabel'], fontsize=10)
-        ax.set_ylabel('Validation Loss', fontsize=10)
-        ax.set_title(data['title'], fontsize=11, fontweight='bold')
-        ax.grid(True, alpha=0.3)
-    
-    # Hide unused subplots
-    for i in range(num_plots, len(axes)):
-        axes[i].axis('off')
-    
-    # Add overall title
-    plt.suptitle(overall_title, fontsize=14, fontweight='bold', y=0.995)
-    plt.tight_layout(rect=(0, 0, 1, 0.99))
-    plt.savefig(save_path, dpi=dpi, bbox_inches='tight')
-    plt.close()
-    
-    print(f"\nSaved sensitivity subplots to: {save_path}")
+    out.save(output_path)
+
+def stitch_images(img_dir, title=""):
+    filename = "_stitched.png"
+    files = sorted(f for f in os.listdir(img_dir) if f.endswith(".png") and f != filename)
+    image_paths = [os.path.join(img_dir, f) for f in files]
+    output_path = os.path.join(img_dir, filename)
+    stitch_specific_images(image_paths, title, output_path)
 
 
-
-
-def plot_silhouette(X, labels, title="Silhouette Plot", save_path=None):
+def plot_silhouette(X, labels, title="Silhouette Plot", save_path=None, silhouette_avg: float | None = None, sample_silhouette_values: np.ndarray | None = None, sample_indices: Optional[np.ndarray] = None):
     """
     Plot silhouette scores for clustering evaluation.
     """
-    silhouette_avg = silhouette_score(X, labels)
-    sample_silhouette_values = silhouette_samples(X, labels)
-    
+    # Require precomputed values to avoid hidden expensive computations in the plotter
+    if silhouette_avg is None or sample_silhouette_values is None:
+        raise ValueError("plot_silhouette requires precomputed `silhouette_avg` and `sample_silhouette_values`.\n"
+                         "Compute them in the clustering module (e.g., Clustering.compute_silhouette) and pass them in.")
+
+    # Align labels with the provided sample silhouette values. If `sample_indices` is provided,
+    # the silhouette values correspond to labels[sample_indices]. Otherwise they correspond to the
+    # full label array.
+    if sample_indices is not None:
+        labels_arr = np.array(labels)
+        try:
+            labels_to_plot = labels_arr[sample_indices]
+        except Exception:
+            # Fallback: if indices incompatible, raise a clear error
+            raise ValueError("Provided `sample_indices` cannot be applied to given labels array.")
+    else:
+        labels_to_plot = np.array(labels)
+
     fig, ax = plt.subplots(figsize=(8, 6))
     y_lower = 10
-    for i in range(max(labels) + 1):
-        ith_cluster_silhouette_values = np.array(sample_silhouette_values[labels == i])  # type:ignore
+    n_clusters = max(labels_to_plot) + 1
+    for i in range(n_clusters):
+        ith_cluster_silhouette_values = np.array(sample_silhouette_values[labels_to_plot == i])  # type:ignore
+        if ith_cluster_silhouette_values.size == 0:
+            continue
         ith_cluster_silhouette_values = np.sort(ith_cluster_silhouette_values)
         size_cluster_i = ith_cluster_silhouette_values.shape[0]
         y_upper = y_lower + size_cluster_i
-        color = plt.cm.nipy_spectral(float(i) / (max(labels) + 1))  # type:ignore
+        color = plt.cm.nipy_spectral(float(i) / n_clusters)  # type:ignore
         ax.fill_betweenx(np.arange(y_lower, y_upper), 0, ith_cluster_silhouette_values, facecolor=color, edgecolor=color, alpha=0.7)  # type: ignore
         ax.text(-0.05, y_lower + 0.5 * size_cluster_i, str(i))
         y_lower = y_upper + 10
-    
+
     ax.set_title(f"{title} (Avg Score: {silhouette_avg:.2f})")
     ax.set_xlabel("Silhouette Coefficient Values")
     ax.set_ylabel("Cluster Label")
@@ -190,7 +293,7 @@ def plot_silhouette(X, labels, title="Silhouette Plot", save_path=None):
     ax.set_yticks([])
     ax.set_xlim(-0.1, 1)
     if save_path:
-        plt.savefig(save_path)
+        plt.savefig(save_path, dpi=300)
     else:
         plt.show()
     plt.close()
@@ -214,7 +317,7 @@ def plot_scatter(x_list, y_list, labels=None, xlabel="", ylabel="", title="", sa
     plt.legend()
     plt.grid(True)
     if save_path:
-        plt.savefig(save_path)
+        plt.savefig(save_path, dpi=300)
     else:
         plt.show()
     plt.close()
@@ -231,10 +334,12 @@ def plot_cluster_scatter(X, labels, method='pca', title="Cluster Scatter Plot", 
         X_reduced = X
     
     unique_labels = np.unique(labels)
+    n_clusters = len(unique_labels)
     x_list = []
     y_list = []
     labels_list = []
-    colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan'][:len(unique_labels)]
+    # Use the same colormap as silhouette plot for consistency
+    colors = [plt.cm.nipy_spectral(float(i) / n_clusters) for i in range(n_clusters)]  # type: ignore
     
     for k, col in zip(unique_labels, colors):
         class_member_mask = (labels == k)
@@ -255,3 +360,36 @@ def plot_cluster_scatter(X, labels, method='pca', title="Cluster Scatter Plot", 
     )
 
 
+def plot_bar(x_labels, values, xlabel="", ylabel="", title="", save_path=None, color='skyblue'):
+    """
+    Simple bar plot function.
+    """
+    plt.figure(figsize=(8, 5))
+    plt.bar(x_labels, values, color=color)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.title(title)
+    plt.grid(True, alpha=0.3)
+    if save_path:
+        plt.savefig(save_path, dpi=300)
+    else:
+        plt.show()
+    plt.close()
+
+
+def plot_hist(values, bins: int = 20, xlabel: str = "", ylabel: str = "Count", title: str = "", save_path: Optional[str] = None, color: str = 'tab:blue', figsize=(4, 3), dpi: int = 150):
+    """
+    Simple histogram plot helper.
+    """
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=figsize, dpi=dpi)
+    plt.hist(values, bins=bins, color=color, alpha=0.7)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.title(title)
+    plt.grid(True, alpha=0.3)
+    if save_path:
+        plt.savefig(save_path, dpi=dpi)
+    else:
+        plt.show()
+    plt.close()

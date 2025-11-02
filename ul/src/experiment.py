@@ -1,24 +1,21 @@
 import os
-from typing import Any, Dict, List, Optional, Tuple
-import numpy as np
+from typing import Tuple, Literal
 import torch
 
-from clustering.clustering import Clustering
 from utils.data_processing import load_or_process_data, wrap_into_loaders
 from utils.logger import MLLogger
-from utils.plotter import plot_curve, plot_silhouette, plot_scatter, plot_cluster_scatter
-from sklearn.cluster import KMeans
-from sklearn.mixture import GaussianMixture
-from sklearn.metrics import silhouette_score, adjusted_rand_score
+from clustering.kmeans import KMeansClustering
+from clustering.em import EMClustering
 
 print(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
 
 class Experiment:
-    def __init__(self, dataset: str, target: str, method: str):
+    def __init__(self, dataset: str, target: str, method: str, seed: int = 42):
         """Initialize experiment with dataset config and setup logging/system info."""
         self.dataset = dataset
         self.target = target
         self.method = method
+        self.seed = seed
         self.save_path = os.path.join(os.environ['ROOT'], f"figures/{self.dataset}")
         os.makedirs(self.save_path, exist_ok=True)
 
@@ -50,14 +47,22 @@ class Experiment:
         return train_loader, val_loader, test_loader
 
 
-    def run_kmeans(self, k_range=(2, 10), stability_runs=10):
+    def run_kmeans(self, k_range=(2, 10), stability_runs=10, data_subsample=1.0, plot_subsample_size=5000, n_init: int = 10, silhouette_dunn_weight: tuple = (0.25, 0.75)):
         """Run K-Means clustering on raw data."""
-        X_train, _, _, _, _, _ = self.get_data()
-        clustering = Clustering(self.ml_logger, self.dataset, self.save_path)
-        return clustering.run_kmeans(X_train, k_range, stability_runs)
+        X_train, _, _, _, _, _ = self.get_data(subsample=data_subsample)
+        clustering = KMeansClustering(self.dataset, f"{self.save_path}/kmeans", self.ml_logger, plot_subsample_size=plot_subsample_size, seed=self.seed)
+        model = clustering.run_kmeans(X_train, k_range, stability_runs, n_init=n_init, silhouette_dunn_weight=silhouette_dunn_weight)
+        return model
+
+    def run_em(self, n_components_range=(2, 15), stability_runs=10, data_subsample=1.0, plot_subsample_size=5000, covariance_type: Literal['full', 'tied', 'diag', 'spherical'] = 'full'):
+        """Run Expectation-Maximization (GMM) clustering on raw data."""
+        X_train, _, _, _, _, _ = self.get_data(subsample=data_subsample)
+        clustering = EMClustering(self.dataset, f"{self.save_path}/em", self.ml_logger, plot_subsample_size=plot_subsample_size, seed=self.seed)
+        model = clustering.run_gmm(X_train, n_components_range, stability_runs, covariance_type=covariance_type)
+        return model
 
     # Clustering on raw data - EM
-    def run_em_step1(self, k_range=(2, 10), chosen_components=5, stability_runs=10):
+    def run_em_step1(self, k_range=(2, 15), chosen_components=5, stability_runs=10):
         return None
 
     # Clustering on dimensionality reduced data

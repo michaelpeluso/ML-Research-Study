@@ -47,12 +47,24 @@ def main():
     exp = Experiment(
         dataset=config['dataset'],
         target=config['target'],
-        method=config['method']
+        method=config['method'],
+        seed=seed
     )
-    X_train, X_val, X_test, y_train, y_val, y_test = exp.get_data(subsample=config['subsample'])
-    exp.run_kmeans((4, 8), 10)
-    #exp.run_em((2, 10), X_train, seed)
-
+    exp.run_kmeans(
+        k_range=(2, 15), 
+        stability_runs=10, 
+        data_subsample=0.5,
+        plot_subsample_size=5000,
+        n_init=10,
+        silhouette_dunn_weight=(0.25, 0.75)
+    )
+    exp.run_em(
+        n_components_range=(2, 15),
+        stability_runs=10,
+        data_subsample=0.5,
+        plot_subsample_size=5000,
+        covariance_type='full',
+    )
 
 
 if __name__ == "__main__":
