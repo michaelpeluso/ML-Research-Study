@@ -3,7 +3,7 @@ import time
 import numpy as np
 
 from sklearn.cluster import KMeans
-from utils.plotter import plot_dual_axis
+from utils.plotter import plot_curve, plot_multiple_y_axes
 from utils.logger import print_t as print
 from clustering.base import BaseClustering
 
@@ -19,10 +19,10 @@ class KMeansClustering(BaseClustering):
     algorithm_name = 'K-Means'
     centers_attr = 'cluster_centers_'
     
-    def fit_model(self, X, n_clusters, seed, n_init=10, **kwargs):
+    def fit_model(self, X, n_clusters, n_init=10, **kwargs):
         """Fit KMeans and return the fitted model."""
         print(f"Fitting KMeans model")
-        kmeans = KMeans(n_clusters=n_clusters, random_state=seed, n_init=n_init)
+        kmeans = KMeans(n_clusters=n_clusters, random_state=self.seed, n_init=n_init)
         kmeans.fit(X)
         return kmeans
     
@@ -33,32 +33,53 @@ class KMeansClustering(BaseClustering):
         }
     
     def plot_metrics(self, selection_results, chosen_n: int | None = None):
-        """Plot inertia, silhouette, and Dunn vs k with dual axes."""
+        """Plot all K-Means metrics individually and together with multiple y-axes."""
         k_values = [r["k"] for r in selection_results]
-        inertias = [r["inertia"] for r in selection_results]
-        sil_scores = [r["silhouette_score"] for r in selection_results]
-        dunn_scores = [r["dunn_index"] for r in selection_results]
-        plot_dual_axis(
+        
+        # Define metrics with their properties
+        metrics_config = [
+            ('silhouette_score', 'Silhouette Score', 'Silhouette', 'higher', 'blue'),
+            ('calinski_harabasz_score', 'Calinski-Harabasz Index', 'CHI', 'higher', 'green'),
+            ('davies_bouldin_score', 'Davies-Bouldin Index', 'DBI', 'lower', 'orange'),
+            ('dunn_index', 'Dunn Index', 'Dunn', 'higher', 'purple'),
+            ('inertia', 'Inertia', 'Inertia', 'lower', 'red'),
+        ]
+        
+        # Extract metric values and generate individual plots
+        individuals_path = os.path.join(self.save_path, "individuals")
+        os.makedirs(individuals_path, exist_ok=True)
+        
+        metric_data = []
+        for key, full_name, short_name, direction, color in metrics_config:
+            values = [r[key] for r in selection_results]
+            metric_data.append((values, short_name))
+            
+            plot_curve(
+                x=k_values,
+                y_list=values,
+                labels=[full_name],
+                xlabel="Number of Clusters k",
+                ylabel=f"{full_name} ({direction} is better)",
+                title=f"K-Means: {full_name} vs k on {self.dataset}",
+                save_path=os.path.join(individuals_path, f"{key}.png"),
+                colors=[color],
+                marker='o'
+            )
+        
+        # Comprehensive plot with all metrics using multiple y-axes
+        plot_multiple_y_axes(
             x=k_values,
-            y_left=inertias,
-            y_right=[sil_scores, dunn_scores],
-            left_labels=["Inertia"],
-            right_labels=["Silhouette Score", "Dunn Index"],
-            left_ylabel="Inertia",
-            right_ylabel="Silhouette Score / Dunn Index",
+            y_series=[data[0] for data in metric_data],
+            labels=[data[1] for data in metric_data],
             xlabel="Number of Clusters k",
-            title=f"Inertia, Silhouette, and Dunn vs k (K-Means) on {self.dataset}",
-            save_path=os.path.join(self.save_path, "combined_curve.png"),
+            title=f"K-Means: All Metrics on {self.dataset}",
+            save_path=os.path.join(self.save_path, "all_metrics_multi_axis.png"),
             vline_x=chosen_n,
             vline_label=f"Optimal k={chosen_n}" if chosen_n else None
         )
-
-    def run_kmeans(self, X_train, k: int | tuple = (2, 10), stability_runs=10, seed: int|None=None, n_init: int = 10, silhouette_dunn_weight: tuple = (0.25, 0.75)):
-        """Run K-Means clustering. Wrapper around base run_clustering with KMeans-specific defaults."""
-        metric_weights = {
-            'silhouette_score': silhouette_dunn_weight[0],
-            'dunn_index': silhouette_dunn_weight[1]
-        }
-        return self.run_clustering(X_train, k, stability_runs, seed, metric_weights, n_init=n_init)
+        
+    def run_kmeans(self, X_train, k_range=(2, 15), stability_runs=10, n_init: int = 10, metric_weights={'silhouette_score': 1.0}, n_jobs:int=1):
+        """Run K-Means clustering with configurable metric weights."""
+        return self.run_clustering(X_train, k_range, stability_runs, metric_weights, n_init=n_init)
 
                        

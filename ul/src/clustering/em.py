@@ -4,7 +4,7 @@ import numpy as np
 from typing import Literal
 
 from sklearn.mixture import GaussianMixture
-from utils.plotter import plot_dual_axis
+from utils.plotter import plot_curve, plot_multiple_y_axes
 from utils.logger import print_t as print
 from clustering.base import BaseClustering
 
@@ -20,13 +20,13 @@ class EMClustering(BaseClustering):
     algorithm_name = 'GMM'
     centers_attr = 'means_'
     
-    def fit_model(self, X, n_clusters, seed, n_init=10, covariance_type: Literal['full', 'tied', 'diag', 'spherical']='full', tol=1e-3, max_iter=100, **kwargs):
+    def fit_model(self, X, n_clusters, n_init=10, covariance_type: Literal['full', 'tied', 'diag', 'spherical']='full', tol=1e-3, max_iter=100, **kwargs):
         """Fit GaussianMixture and return the fitted model."""
         print(f"Fitting GMM model")
         gmm = GaussianMixture(
             n_components=n_clusters, 
             covariance_type=covariance_type,
-            random_state=seed, 
+            random_state=self.seed, 
             n_init=n_init,
             tol=tol,
             max_iter=max_iter,
@@ -46,27 +46,53 @@ class EMClustering(BaseClustering):
         }
     
     def plot_metrics(self, selection_results, chosen_n: int | None = None):
-        """Plot BIC, AIC, silhouette, and Dunn vs n_components."""
+        """Plot all GMM metrics individually and together with multiple y-axes."""
         n_values = [r["n_components"] for r in selection_results]
-        bic_values = [r["bic"] for r in selection_results]
-        aic_values = [r["aic"] for r in selection_results]
-        sil_scores = [r["silhouette_score"] for r in selection_results]
-        dunn_scores = [r["dunn_index"] for r in selection_results]
         
-        plot_dual_axis(
+        # Define metrics with their properties
+        metrics_config = [
+            ('silhouette_score', 'Silhouette Score', 'Silhouette', 'higher', 'blue'),
+            ('calinski_harabasz_score', 'Calinski-Harabasz Index', 'CHI', 'higher', 'green'),
+            ('davies_bouldin_score', 'Davies-Bouldin Index', 'DBI', 'lower', 'orange'),
+            ('dunn_index', 'Dunn Index', 'Dunn', 'higher', 'purple'),
+            ('bic', 'BIC', 'BIC', 'lower', 'red'),
+            ('aic', 'AIC', 'AIC', 'lower', 'brown'),
+            ('log_likelihood', 'Log-Likelihood', 'Log-Likelihood', 'higher', 'cyan'),
+        ]
+        
+        # Extract metric values and generate individual plots
+        individuals_path = os.path.join(self.save_path, "individuals")
+        os.makedirs(individuals_path, exist_ok=True)
+        
+        metric_data = []
+        for key, full_name, short_name, direction, color in metrics_config:
+            values = [r[key] for r in selection_results]
+            metric_data.append((values, short_name))
+            
+            plot_curve(
+                x=n_values,
+                y_list=values,
+                labels=[full_name],
+                xlabel="Number of Components",
+                ylabel=f"{full_name} ({direction} is better)",
+                title=f"GMM: {full_name} vs n on {self.dataset}",
+                save_path=os.path.join(individuals_path, f"{key}.png"),
+                colors=[color],
+                marker='o'
+            )
+        
+        # Comprehensive plot with all metrics using multiple y-axes
+        plot_multiple_y_axes(
             x=n_values,
-            y_left=[bic_values, aic_values],
-            y_right=[sil_scores, dunn_scores],
-            left_labels=["BIC", "AIC"],
-            right_labels=["Silhouette Score", "Dunn Index"],
-            left_ylabel="BIC / AIC",
-            right_ylabel="Silhouette Score / Dunn Index",
+            y_series=[data[0] for data in metric_data],
+            labels=[data[1] for data in metric_data],
             xlabel="Number of Components",
-            title=f"GMM Metrics vs mixture_components on {self.dataset}",
-            save_path=os.path.join(self.save_path, "combined_curve.png"),
+            title=f"GMM: All Metrics on {self.dataset}",
+            save_path=os.path.join(self.save_path, "all_metrics_multi_axis.png"),
             vline_x=chosen_n,
-            vline_label=f"Optimal n={chosen_n}" if chosen_n else None,
+            vline_label=f"Optimal n={chosen_n}" if chosen_n else None
         )
+        
 
     def run_gmm(self, 
                 X_train, 
@@ -74,16 +100,9 @@ class EMClustering(BaseClustering):
                 stability_runs=10, 
                 seed: int | None = None, 
                 n_init: int = 10, 
-                covariance_type: Literal['full', 'tied', 'diag', 'spherical'] = 'full', 
-                bic_weight: float = 0.4, 
-                silhouette_weight: float = 0.4, 
-                dunn_weight: float = 0.2
+                covariance_type: Literal['full', 'tied', 'diag', 'spherical'] = 'full',
+                metric_weights: dict | None = None
                 ):
-        """Run GMM clustering. Wrapper around base run_clustering with GMM-specific defaults."""
-        metric_weights = {
-            'bic': bic_weight,
-            'silhouette_score': silhouette_weight,
-            'dunn_index': dunn_weight
-        }
-        return self.run_clustering(X_train, mixture_components, stability_runs, seed, metric_weights, 
-                                   n_init=n_init, covariance_type=covariance_type)
+        """
+        Run GMM clustering with configurable metric weights."""
+        return self.run_clustering(X_train, mixture_components, stability_runs, metric_weights, n_init=n_init, covariance_type=covariance_type)

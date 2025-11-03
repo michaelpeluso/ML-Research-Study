@@ -4,7 +4,6 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from sklearn.metrics import adjusted_rand_score
 from sklearn.decomposition import PCA
 
 matplotlib.use('Agg')
@@ -82,104 +81,6 @@ def plot_curve(x: Union[list, Any], y_list: list, labels: Optional[list[str]] = 
     
     if any(lbl is not None for lbl in labels):  # changed: show legend only if any non-None labels
         plt.legend()
-    if save_path:
-        plt.savefig(save_path, dpi=300)
-    else:
-        plt.show()
-    plt.close()
-
-
-def plot_dual_axis(x: Union[list, Any], 
-                   y_left: Union[list, list[list]], 
-                   y_right: Union[list, list[list], None] = None,
-                   left_labels: Optional[list[str]] = None,
-                   right_labels: Optional[list[str]] = None,
-                   left_ylabel: str = "",
-                   right_ylabel: str = "",
-                   xlabel: str = "",
-                   title: str = "",
-                   save_path: Optional[str] = None,
-                   left_colors: Optional[list[str]] = None,
-                   right_colors: Optional[list[str]] = None,
-                   left_markers: Optional[list[str]] = None,
-                   right_markers: Optional[list[str]] = None,
-                   vline_x: Optional[float] = None,
-                   vline_label: Optional[str] = None):
-    """
-    Plot multiple series on left and/or right axes with dual y-axes.
-    
-    Args:
-        vline_x: Optional x-value for vertical line (e.g., chosen_k)
-        vline_label: Optional label for the vertical line
-    """
-    plt.figure(figsize=(8, 5), dpi=300)
-    ax_left = plt.gca()
-    
-    # optional vertical line
-    if vline_x is not None:
-        ax_left.axvline(x=vline_x, color='red', linewidth=1, 
-                       alpha=0.7, zorder=1, label=vline_label or f'x={vline_x}')
-
-    # Normalize y_left to list of lists
-    if isinstance(y_left[0], (int, float)) if y_left else False:
-        y_left_list = [y_left]
-    else:
-        y_left_list = y_left
-
-    # Normalize y_right to list of lists
-    if y_right is not None:
-        if isinstance(y_right[0], (int, float)) if y_right else False:
-            y_right_list = [y_right]
-        else:
-            y_right_list = y_right
-    else:
-        y_right_list = []
-
-    # Default colors, markers, and linestyles
-    left_colors = left_colors or ['blue'] * len(y_left_list)
-    right_colors = right_colors or ['orange'] * len(y_right_list)
-    left_markers = left_markers or ['o'] * len(y_left_list)
-    right_markers = right_markers or ['o'] * len(y_right_list)
-    left_linestyles = ['-', '-.', ':', '--'][:len(y_left_list)]
-    right_linestyles = ['-', '-.', ':', '--'][:len(y_right_list)]
-    left_labels = left_labels or [f"Left {i+1}" for i in range(len(y_left_list))]
-    right_labels = right_labels or [f"Right {i+1}" for i in range(len(y_right_list))]
-
-    # Integer ticks for x-axis
-    if isinstance(x, (list, np.ndarray)) and all(isinstance(v, int) for v in x):
-        ax_left.set_xticks(x)
-
-    # Plot left axis series
-    lines_left = []
-    for i, (y, color, marker, lbl, ls) in enumerate(zip(y_left_list, left_colors, left_markers, left_labels, left_linestyles)):
-        line, = ax_left.plot(x, y, color=color, marker=marker, label=lbl, linewidth=2, linestyle=ls, zorder=3)
-        lines_left.append(line)
-    ax_left.set_ylabel(left_ylabel or " / ".join(left_labels), color='black', fontweight='bold')
-    ax_left.tick_params(axis='y', labelcolor='blue', colors='blue')
-    ax_left.spines['left'].set_color('blue')
-    ax_left.spines['left'].set_linewidth(2)
-
-    # Plot right axis series
-    lines_right = []
-    if y_right_list:
-        ax_right = ax_left.twinx()
-        for i, (y, color, marker, lbl, ls) in enumerate(zip(y_right_list, right_colors, right_markers, right_labels, right_linestyles)):
-            line, = ax_right.plot(x, y, color=color, marker=marker, label=lbl, linewidth=2, linestyle=ls, zorder=3)
-            lines_right.append(line)
-        ax_right.set_ylabel(right_ylabel or " / ".join(right_labels), color='black', fontweight='bold')
-        ax_right.tick_params(axis='y', labelcolor='orange', colors='orange')
-        ax_right.spines['right'].set_color('orange')
-        ax_right.spines['right'].set_linewidth(2)
-
-    # Labels and legend
-    ax_left.set_xlabel(xlabel)
-    plt.title(title)
-    
-    all_lines = lines_left + lines_right
-    all_labels = left_labels + right_labels
-    ax_left.legend(all_lines, all_labels)
-
-    plt.grid(True)
     if save_path:
         plt.savefig(save_path, dpi=300)
     else:
@@ -323,15 +224,21 @@ def plot_scatter(x_list, y_list, labels=None, xlabel="", ylabel="", title="", sa
     plt.close()
 
 
-def plot_cluster_scatter(X, labels, method='pca', title="Cluster Scatter Plot", save_path=None):
+def plot_cluster_scatter(X, labels, method='pca', title="Cluster Scatter Plot", save_path=None, centers=None):
     """
     Scatter plot of clusters after dimensionality reduction to 2D.
     """
     if X.shape[1] > 2:
         reducer = PCA(n_components=2, random_state=42)
         X_reduced = reducer.fit_transform(X)
+        # Transform centers to same 2D space if provided
+        if centers is not None:
+            centers_reduced = reducer.transform(centers)
+        else:
+            centers_reduced = None
     else:
         X_reduced = X
+        centers_reduced = centers
     
     unique_labels = np.unique(labels)
     n_clusters = len(unique_labels)
@@ -348,16 +255,40 @@ def plot_cluster_scatter(X, labels, method='pca', title="Cluster Scatter Plot", 
         y_list.append(xy[:, 1])
         labels_list.append(f'Cluster {k}')
     
-    plot_scatter(
-        x_list=x_list,
-        y_list=y_list,
-        labels=labels_list,
-        xlabel=f'{method.upper()} Component 1',
-        ylabel=f'{method.upper()} Component 2',
-        title=title,
-        save_path=save_path,
-        colors=colors
-    )
+    # Create the scatter plot
+    plt.figure(figsize=(8, 6))
+    
+    # Plot data points
+    for i, (x, y, lbl, col) in enumerate(zip(x_list, y_list, labels_list, colors)):
+        plt.scatter(x, y, label=lbl, color=col, alpha=0.7)
+    
+    # Plot cluster centers if provided
+    if centers_reduced is not None:
+        # Plot each center in its cluster's color
+        for i, col in enumerate(colors):
+            if i == 0:
+                # Only add label for the first center (shown as black 'X' in legend)
+                plt.scatter(centers_reduced[i, 0], centers_reduced[i, 1], 
+                           marker='X', s=150, linewidths=1, 
+                           color=col, edgecolors='white', 
+                           label='Centers', zorder=10)
+            else:
+                # Other centers without label
+                plt.scatter(centers_reduced[i, 0], centers_reduced[i, 1], 
+                           marker='X', s=150, linewidths=1, 
+                           color=col, edgecolors='white', 
+                           zorder=10)
+    
+    plt.xlabel(f'{method.upper()} Component 1')
+    plt.ylabel(f'{method.upper()} Component 2')
+    plt.title(title)
+    plt.legend()
+    plt.grid(True)
+    if save_path:
+        plt.savefig(save_path, dpi=300)
+    else:
+        plt.show()
+    plt.close()
 
 
 def plot_bar(x_labels, values, xlabel="", ylabel="", title="", save_path=None, color='skyblue'):
@@ -390,6 +321,96 @@ def plot_hist(values, bins: int = 20, xlabel: str = "", ylabel: str = "Count", t
     plt.grid(True, alpha=0.3)
     if save_path:
         plt.savefig(save_path, dpi=dpi)
+    else:
+        plt.show()
+    plt.close()
+
+
+def plot_multiple_y_axes(x: Union[list, Any],
+                         y_series: List[List],
+                         labels: List[str],
+                         colors: Optional[List[str]] = None,
+                         markers: Optional[List[str]] = None,
+                         xlabel: str = "",
+                         title: str = "",
+                         save_path: Optional[str] = None,
+                         vline_x: Optional[float] = None,
+                         vline_label: Optional[str] = None):
+    """
+    Plot multiple series, each with its own y-axis on the left side.
+    Similar to the example with multiple left-side y-axes.
+    """
+    n_series = len(y_series)
+    if n_series == 0:
+        return
+    
+    fig, host = plt.subplots(figsize=(12, 7), dpi=300)
+    
+    # Default colors using a distinct color palette
+    if colors is None:
+        color_palette = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
+                        '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+        colors = [color_palette[i % len(color_palette)] for i in range(n_series)]
+    
+    markers = markers or ['o'] * n_series
+    
+    # Create additional axes for each series (starting from index 1)
+    axes = [host]
+    spine_offset = 70  # Increased offset for better separation
+    for i in range(1, n_series):
+        ax = host.twinx()
+        # Offset the spine position for visibility
+        ax.spines['left'].set_position(('outward', spine_offset * i))
+        ax.spines['left'].set_visible(True)
+        ax.yaxis.set_label_position('left')
+        ax.yaxis.set_ticks_position('left')
+        axes.append(ax)
+    
+    # Plot each series on its own axis
+    lines = []
+    for i, (ax, y, label, color, marker) in enumerate(zip(axes, y_series, labels, colors, markers)):
+        line, = ax.plot(x, y, color=color, marker=marker, label=label, 
+                       linewidth=2.5, markersize=7, markeredgewidth=1.5, 
+                       markeredgecolor='white', zorder=10 - i)
+        ax.set_ylabel(label, color=color, fontweight='bold', fontsize=11)
+        ax.tick_params(axis='y', labelcolor=color, colors=color, labelsize=9)
+        ax.spines['left'].set_color(color)
+        ax.spines['left'].set_linewidth(2.5)
+        lines.append(line)
+    
+    # Optional vertical line
+    if vline_x is not None:
+        host.axvline(x=vline_x, color='black', linewidth=2.5, 
+                    linestyle='--', alpha=0.8, zorder=1, 
+                    label=vline_label or f'x={vline_x}')
+    
+    # Set x-axis label and title
+    host.set_xlabel(xlabel, fontweight='bold', fontsize=12)
+    host.set_title(title, fontweight='bold', fontsize=14, pad=15)
+    
+    # Integer ticks for x-axis
+    if isinstance(x, (list, np.ndarray)) and all(isinstance(v, int) for v in x):
+        host.set_xticks(x)
+    
+    # Style adjustments for better readability
+    host.tick_params(axis='x', labelsize=10)
+    host.spines['right'].set_visible(False)
+    host.spines['top'].set_visible(False)
+    
+    # Only vertical grid lines (no horizontal)
+    host.grid(True, axis='x', alpha=0.3, linestyle='--', linewidth=0.8)
+    host.grid(False, axis='y')  # Disable horizontal grid lines
+    
+    # Create legend with all lines
+    host.legend(lines, labels, loc='upper right', framealpha=0.9, 
+               fontsize=10, ncol=min(3, n_series))
+    
+    # Adjust layout to prevent label cutoff
+    plt.subplots_adjust(left=0.05 + (n_series - 1) * 0.05)
+    fig.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
     else:
         plt.show()
     plt.close()

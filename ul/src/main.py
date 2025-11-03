@@ -56,7 +56,13 @@ def main():
         data_subsample=0.5,
         plot_subsample_size=5000,
         n_init=10,
-        silhouette_dunn_weight=(0.25, 0.75)
+        metric_weights={
+            'silhouette_score': 0.3,
+            'calinski_harabasz_score': 0.3,
+            'davies_bouldin_score': 0.2,
+            'dunn_index': 0.2
+        },
+        n_jobs=-1
     )
     exp.run_em(
         n_components_range=(2, 15),
@@ -64,6 +70,13 @@ def main():
         data_subsample=0.5,
         plot_subsample_size=5000,
         covariance_type='full',
+        metric_weights={
+            'silhouette_score': 0.3,
+            'calinski_harabasz_score': 0.3,
+            'davies_bouldin_score': 0.2,
+            'dunn_index': 0.2
+        },
+        n_jobs=-1
     )
 
 

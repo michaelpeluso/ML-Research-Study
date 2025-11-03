@@ -47,18 +47,18 @@ class Experiment:
         return train_loader, val_loader, test_loader
 
 
-    def run_kmeans(self, k_range=(2, 10), stability_runs=10, data_subsample=1.0, plot_subsample_size=5000, n_init: int = 10, silhouette_dunn_weight: tuple = (0.25, 0.75)):
+    def run_kmeans(self, k_range=(2, 10), stability_runs=10, data_subsample=1.0, plot_subsample_size=5000, n_init: int = 10, metric_weights={'silhouette_score': 1.0}, n_jobs:int=1):
         """Run K-Means clustering on raw data."""
         X_train, _, _, _, _, _ = self.get_data(subsample=data_subsample)
-        clustering = KMeansClustering(self.dataset, f"{self.save_path}/kmeans", self.ml_logger, plot_subsample_size=plot_subsample_size, seed=self.seed)
-        model = clustering.run_kmeans(X_train, k_range, stability_runs, n_init=n_init, silhouette_dunn_weight=silhouette_dunn_weight)
+        clustering = KMeansClustering(self.dataset, f"{self.save_path}/kmeans", self.ml_logger, plot_subsample_size=plot_subsample_size, seed=self.seed, n_jobs=n_jobs)
+        model = clustering.run_kmeans(X_train, k_range, stability_runs, n_init=n_init, metric_weights=metric_weights)
         return model
 
-    def run_em(self, n_components_range=(2, 15), stability_runs=10, data_subsample=1.0, plot_subsample_size=5000, covariance_type: Literal['full', 'tied', 'diag', 'spherical'] = 'full'):
+    def run_em(self, n_components_range=(2, 15), stability_runs=10, data_subsample=1.0, plot_subsample_size=5000, covariance_type: Literal['full', 'tied', 'diag', 'spherical'] = 'full', metric_weights={'silhouette_score': 1.0}, n_jobs:int=1):
         """Run Expectation-Maximization (GMM) clustering on raw data."""
         X_train, _, _, _, _, _ = self.get_data(subsample=data_subsample)
-        clustering = EMClustering(self.dataset, f"{self.save_path}/em", self.ml_logger, plot_subsample_size=plot_subsample_size, seed=self.seed)
-        model = clustering.run_gmm(X_train, n_components_range, stability_runs, covariance_type=covariance_type)
+        clustering = EMClustering(self.dataset, f"{self.save_path}/em", self.ml_logger, plot_subsample_size=plot_subsample_size, seed=self.seed, n_jobs=n_jobs)
+        model = clustering.run_gmm(X_train, n_components_range, stability_runs, covariance_type=covariance_type, metric_weights=metric_weights)
         return model
 
     # Clustering on raw data - EM
