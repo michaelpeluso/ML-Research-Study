@@ -23,13 +23,12 @@ class BaseClustering(ABC):
     algorithm_name = 'Clustering'   # Algorithm name for titles
     centers_attr = 'cluster_centers_'  # Attribute name for cluster centers
     
-    def __init__(self, dataset: str, save_path: str, ml_logger: MLLogger, plot_subsample_size: int = 10000, seed: int = 42, n_jobs: int = -1):
+    def __init__(self, dataset: str, save_path: str, ml_logger: MLLogger, plot_subsample_size: int = 10000, seed: int = 42):
         self.dataset = dataset
         self.save_path = save_path
         self.ml_logger = ml_logger
         self.plot_subsample_size = plot_subsample_size
         self.seed = seed
-        self.n_jobs = n_jobs
         os.makedirs(self.save_path, exist_ok=True)
     
     @abstractmethod
@@ -52,45 +51,95 @@ class BaseClustering(ABC):
         """Get algorithm-specific metrics (e.g., inertia for KMeans, BIC/AIC for GMM). """
         return {}
     
-    def measure_clustering(self, X_train, n_clusters, **kwargs):
-        """Measure clustering quality for a specific number of clusters. """
-        print(f"Measuring {self.algorithm_name} ({self.param_name}={n_clusters})")
+    def measure_clustering(self, X_train, n_clusters, stability_runs=1, **kwargs):
+        """Measure clustering quality for a specific number of clusters."""
+        print(f"Measuring {self.algorithm_name} ({self.param_name}={n_clusters}) with {stability_runs} run(s)")
         with self.ml_logger.log_step(f"{self.algorithm_name} Hyperparameter Selection ({self.param_name}={n_clusters})") as step_info:  
             start_time = time.perf_counter()
             
-            # Fit model and extract results
-            model = self.fit_model(X_train, n_clusters=n_clusters, **kwargs)
-            labels, centers = self.extract_results(model, X_train)
-           
-            # Compute metrics
-            sil_score = -1
+            # Run clustering multiple times with different seeds
+            all_metrics = []
+            models = []
+            
+            for run_idx in range(stability_runs):
+                seed_i = self.seed + (run_idx * 1000)
+                print(f"Fitting run {run_idx + 1}/{stability_runs} with seed {seed_i}")
+                
+                # Fit model and extract results
+                model = self.fit_model(X_train, n_clusters=n_clusters, seed=seed_i, **kwargs)
+                labels, centers = self.extract_results(model, X_train)
+                models.append((model, labels, centers))
+                
+                # Compute metrics for this run
+                sil_score = -1
+                chi_score = -1
+                dbi_score = -1
+                
+                if n_clusters > 1:
+                    Xs, ys, sample_idx = sample_fit_labels(X_train, labels, sample_size=self.plot_subsample_size, seed=seed_i)
+                    sil_score, _ = self.compute_silhouette(Xs, ys)
+                    chi_score = float(calinski_harabasz_score(X_train, labels))
+                    dbi_score = float(davies_bouldin_score(X_train, labels))
+                
+                dunn_idx = self.dunn_index(X_train, labels, centers)
+                
+                # Get additional algorithm-specific metrics
+                additional_metrics = self.get_additional_metrics(model, X_train)
+                
+                all_metrics.append({
+                    'silhouette_score': sil_score,
+                    'calinski_harabasz_score': chi_score,
+                    'davies_bouldin_score': dbi_score,
+                    'dunn_index': dunn_idx,
+                    **additional_metrics
+                })
+            
+            # Average metrics across runs
+            avg_metrics = {}
+            for key in all_metrics[0].keys():
+                values = [m[key] for m in all_metrics if isinstance(m[key], (int, float))]
+                if values:
+                    avg_metrics[key] = float(np.mean(values))
+                    if stability_runs > 1:
+                        avg_metrics[f"{key}_std"] = float(np.std(values))
+                else:
+                    avg_metrics[key] = all_metrics[0][key]
+            
+            # Use first run for plotting
+            model, labels, centers = models[0]
+            sil_score = avg_metrics['silhouette_score']
+            chi_score = avg_metrics['calinski_harabasz_score']
+            dbi_score = avg_metrics['davies_bouldin_score']
+            dunn_idx = avg_metrics['dunn_index']
+            
             sample_sil_vals = None
             sample_idx = None
-            chi_score = -1
-            dbi_score = -1
             
             if n_clusters > 1:
                 Xs, ys, sample_idx = sample_fit_labels(X_train, labels, sample_size=self.plot_subsample_size, seed=self.seed)
-                sil_score, sample_sil_vals = self.compute_silhouette(Xs, ys)
-                chi_score = float(calinski_harabasz_score(X_train, labels))
-                dbi_score = float(davies_bouldin_score(X_train, labels))
-            
-            dunn_idx = self.dunn_index(X_train, labels, centers)
+                _, sample_sil_vals = self.compute_silhouette(Xs, ys)
 
             # Generate plots
             self.generate_plots(X_train, labels, n_clusters, sil_score, sample_sil_vals, sample_idx, centers)
 
-            # Get additional algorithm-specific metrics
-            additional_metrics = self.get_additional_metrics(model, X_train)
-
             # Log results
             time_taken = time.perf_counter() - start_time
             metrics_str = f"silhouette: {sil_score:.3f}, dunn: {dunn_idx:.3f}, chi: {chi_score:.3f}, dbi: {dbi_score:.3f}"
-            for key, val in additional_metrics.items():
-                if isinstance(val, (int, float)):
-                    metrics_str += f", {key}: {val:.3f}"
-                else:
-                    metrics_str += f", {key}: {val}"
+            
+            if stability_runs > 1:
+                metrics_str += f" [averaged over {stability_runs} runs]"
+                for key in ['silhouette_score', 'calinski_harabasz_score', 'davies_bouldin_score', 'dunn_index']:
+                    std_key = f"{key}_std"
+                    if std_key in avg_metrics:
+                        metrics_str += f", {key}_std: {avg_metrics[std_key]:.3f}"
+            
+            for key, val in avg_metrics.items():
+                if key not in ['silhouette_score', 'calinski_harabasz_score', 'davies_bouldin_score', 'dunn_index'] and not key.endswith('_std'):
+                    if isinstance(val, (int, float)):
+                        metrics_str += f", {key}: {val:.3f}"
+                    else:
+                        metrics_str += f", {key}: {val}"
+            
             print(f"{self.algorithm_name} ({self.param_name}={n_clusters}) - {metrics_str}")
             
             selection_results = {
@@ -101,7 +150,8 @@ class BaseClustering(ABC):
                 "davies_bouldin_score": dbi_score,
                 "dunn_index": dunn_idx,
                 "time": time_taken,
-                **additional_metrics
+                "stability_runs": stability_runs,
+                **{k: v for k, v in avg_metrics.items() if k not in ['silhouette_score', 'calinski_harabasz_score', 'davies_bouldin_score', 'dunn_index']}
             }
             step_info.update(selection_results)
             
@@ -207,7 +257,8 @@ class BaseClustering(ABC):
             labels_list = []
             for i in range(stability_runs):
                 print(f"Stability run {i + 1}/{stability_runs} for {self.param_name}={chosen_n}")
-                seed_i = self.seed + i
+                # Use more diverse seeds for better stability testing
+                seed_i = self.seed + (i * 1000)
                 model = self.fit_model(X_train, n_clusters=chosen_n, seed=seed_i, **kwargs)
                 labels_i, centers = self.extract_results(model, X_train)
                 labels_list.append(labels_i)
@@ -250,34 +301,26 @@ class BaseClustering(ABC):
             
             step_info.update(results)
     
-    def run_clustering(self, X_train, n_clusters: int | tuple = (2, 10), stability_runs=10, metric_weights: dict | None = None, **kwargs):
-        """Generic clustering runner that works for all algorithms. """
+    def run(self, X_train, n_clusters: int | tuple = (2, 10), stability_runs=10, n_jobs: int = 1, **kwargs):
+        """Generic clustering runner that works for all algorithms."""
         with self.ml_logger.log_step(f"{self.algorithm_name} Clustering ({self.param_name}={n_clusters})") as step_info:
             function_start = time.perf_counter()
 
             if isinstance(n_clusters, int):
                 chosen_n = n_clusters
-                model, selection_results = self.measure_clustering(X_train, chosen_n, **kwargs)
+                model, selection_results = self.measure_clustering(X_train, chosen_n, stability_runs=1, **kwargs)
                 step_info.update(selection_results)
                 
             elif isinstance(n_clusters, tuple) and len(n_clusters) == 2:
-                print(f"Evaluating {self.param_name} values from {n_clusters[0]} to {n_clusters[1]} (parallel jobs={self.n_jobs})")
+                print(f"Evaluating {self.param_name} values from {n_clusters[0]} to {n_clusters[1]} (parallel jobs={n_jobs})")
 
                 n_values = list(range(n_clusters[0], n_clusters[1] + 1))
                 
-                # Parallel evaluation of different k/n values
-                if self.n_jobs == 1:
-                    # Sequential execution
-                    results_with_models = [
-                        self.measure_clustering(X_train, n_val, **kwargs)
-                        for n_val in n_values
-                    ]
-                else:
-                    # Parallel execution
-                    results_with_models = Parallel(n_jobs=self.n_jobs, backend='loky', verbose=10)(
-                        delayed(self.measure_clustering)(X_train, n_val, **kwargs)
-                        for n_val in n_values
-                    )
+                # Parallel execution - single run per k (n_init handles stability)
+                results_with_models = Parallel(n_jobs=n_jobs, backend='loky', verbose=10)(
+                    delayed(self.measure_clustering)(X_train, n_val, stability_runs=1, **kwargs)
+                    for n_val in n_values
+                )
                 
                 # Unpack results
                 selection_results = []
@@ -286,8 +329,8 @@ class BaseClustering(ABC):
                     selection_results.append(result)
                     models[n_val] = model
                 
-                # Compute composite scores
-                chosen_n = self._compute_composite_scores(selection_results, metric_weights or {})
+                # Compute composite scores using Rank Aggregation
+                chosen_n = self._compute_composite_scores(selection_results)
                 best_result = next(r for r in selection_results if r[self.param_name] == chosen_n)
                 
                 # Plot metrics
@@ -310,7 +353,6 @@ class BaseClustering(ABC):
                     "total_evaluations": len(n_values),
                     f"chosen_{self.param_name}": chosen_n,
                     **{f"chosen_{self.param_name}_{k}": v for k, v in best_result.items() if k != self.param_name},
-                    "composite_weights": metric_weights or {},
                     "selection_results": selection_results,
                 })
 
@@ -330,10 +372,12 @@ class BaseClustering(ABC):
         self.ml_logger.generate_log_report(output_file=f"{self.save_path}/execution_report.txt")
         return model
     
-    def _compute_composite_scores(self, selection_results, metric_weights):
-        """Compute composite scores and return the best n_clusters. Example: {'silhouette_score': 0.5, 'dunn_index': 0.5, 'bic': 0.3} """
+    def _compute_composite_scores(self, selection_results):
+        """Compute composite scores using Rank Aggregation (HALVING principle).
+        Uses Borda count variant: ranks all k values for each metric and selects the k with minimum sum of ranks."""
         
-        # Define metric directions (higher is better = 'maximize', lower is better = 'minimize')
+        # Define metric directions
+        # higher is better = 'maximize', lower is better = 'minimize'
         METRIC_DIRECTIONS = {
             'silhouette_score': 'maximize',
             'calinski_harabasz_score': 'maximize',
@@ -345,24 +389,40 @@ class BaseClustering(ABC):
             'log_likelihood': 'maximize',
         }
         
-        # Collect metrics and normalize weights
-        metrics = {k: [r[k] for r in selection_results] for k in metric_weights.keys()}
-        total_weight = sum(metric_weights.values())
-        normalized_weights = {k: v / total_weight for k, v in metric_weights.items()} if total_weight > 0 else metric_weights
+        # Always use all 4 shared metrics equally
+        metrics_to_use = ['silhouette_score', 'calinski_harabasz_score', 'davies_bouldin_score', 'dunn_index']
         
-        # Compute composite scores
+        print(f"Using Rank Aggregation with metrics: {metrics_to_use}")
+        
+        rank_sums = {r[self.param_name]: 0 for r in selection_results}
+        
+        for metric_name in metrics_to_use:
+            metric_vals = [r[metric_name] for r in selection_results]
+            direction = METRIC_DIRECTIONS.get(metric_name, 'maximize')
+            
+            if direction == 'maximize':
+                ranks = np.argsort(np.argsort(metric_vals)[::-1]) + 1
+            else:
+                ranks = np.argsort(np.argsort(metric_vals)) + 1
+            
+            # Find best k for this metric for logging
+            best_idx = np.argmin(ranks)
+            best_k = selection_results[best_idx][self.param_name]
+            print(f"  {metric_name}: best {self.param_name}={best_k}")
+            
+            for i, r in enumerate(selection_results):
+                rank_sums[r[self.param_name]] += ranks[i]
+        
+        # Find k with minimum rank sum (best overall ranking)
+        chosen_k = min(rank_sums.keys(), key=lambda k: rank_sums[k])
+        print(f"Rank Aggregation winner: {self.param_name}={chosen_k} (rank sum={rank_sums[chosen_k]})")
+        
+        # Store results
         for r in selection_results:
-            score = 0.0
-            for metric_name, metric_vals in metrics.items():
-                metric_min, metric_max = min(metric_vals), max(metric_vals)
-                if metric_max > metric_min:
-                    raw_norm = (r[metric_name] - metric_min) / (metric_max - metric_min)
-                    norm_val = 1.0 - raw_norm if METRIC_DIRECTIONS.get(metric_name, 'maximize') == 'minimize' else raw_norm
-                    score += normalized_weights[metric_name] * norm_val
-            r['composite_score'] = score
+            r['rank_sum'] = rank_sums[r[self.param_name]]
+            r['composite_score'] = -rank_sums[r[self.param_name]]  # Negative for sorting (higher is better)
         
-        best_result = max(selection_results, key=lambda x: x['composite_score'])
-        return best_result[self.param_name]
+        return chosen_k
 
     
     def generate_evaluation_plots(self, X_train, labels, chosen_n, centers=None):

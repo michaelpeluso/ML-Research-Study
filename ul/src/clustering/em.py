@@ -20,13 +20,13 @@ class EMClustering(BaseClustering):
     algorithm_name = 'GMM'
     centers_attr = 'means_'
     
-    def fit_model(self, X, n_clusters, n_init=10, covariance_type: Literal['full', 'tied', 'diag', 'spherical']='full', tol=1e-3, max_iter=100, **kwargs):
+    def fit_model(self, X, n_clusters, seed=None, n_init=10, covariance_type: Literal['full', 'tied', 'diag', 'spherical']='full', tol=1e-3, max_iter=100, **kwargs):
         """Fit GaussianMixture and return the fitted model."""
         print(f"Fitting GMM model")
         gmm = GaussianMixture(
             n_components=n_clusters, 
             covariance_type=covariance_type,
-            random_state=self.seed, 
+            random_state=seed if seed is not None else self.seed, 
             n_init=n_init,
             tol=tol,
             max_iter=max_iter,
@@ -48,27 +48,25 @@ class EMClustering(BaseClustering):
     def plot_metrics(self, selection_results, chosen_n: int | None = None):
         """Plot all GMM metrics individually and together with multiple y-axes."""
         n_values = [r["n_components"] for r in selection_results]
-        
-        # Define metrics with their properties
-        metrics_config = [
+
+        shared_metrics_config = [
             ('silhouette_score', 'Silhouette Score', 'Silhouette', 'higher', 'blue'),
             ('calinski_harabasz_score', 'Calinski-Harabasz Index', 'CHI', 'higher', 'green'),
             ('davies_bouldin_score', 'Davies-Bouldin Index', 'DBI', 'lower', 'orange'),
-            ('dunn_index', 'Dunn Index', 'Dunn', 'higher', 'purple'),
-            ('bic', 'BIC', 'BIC', 'lower', 'red'),
-            ('aic', 'AIC', 'AIC', 'lower', 'brown'),
-            ('log_likelihood', 'Log-Likelihood', 'Log-Likelihood', 'higher', 'cyan'),
+            ('dunn_index', 'Dunn Index', 'Dunn', 'higher', 'red'),
         ]
-        
-        # Extract metric values and generate individual plots
+        all_metrics_config = [
+            *shared_metrics_config,
+            ('bic', 'BIC', 'BIC', 'lower', 'purple'),
+            ('aic', 'AIC', 'AIC', 'lower', 'brown'),
+            ('log_likelihood', 'Log-Likelihood', 'Log-Likelihood', 'higher', 'lightblue'),
+        ]
         individuals_path = os.path.join(self.save_path, "individuals")
         os.makedirs(individuals_path, exist_ok=True)
-        
         metric_data = []
-        for key, full_name, short_name, direction, color in metrics_config:
+        for key, full_name, short_name, direction, color in all_metrics_config:
             values = [r[key] for r in selection_results]
-            metric_data.append((values, short_name))
-            
+            metric_data.append((values, short_name, color))
             plot_curve(
                 x=n_values,
                 y_list=values,
@@ -80,15 +78,15 @@ class EMClustering(BaseClustering):
                 colors=[color],
                 marker='o'
             )
-        
-        # Comprehensive plot with all metrics using multiple y-axes
+        # Multi-axis plot for shared metrics
         plot_multiple_y_axes(
             x=n_values,
-            y_series=[data[0] for data in metric_data],
-            labels=[data[1] for data in metric_data],
+            y_series=[data[0] for data in metric_data[:4]],
+            labels=[data[1] for data in metric_data[:4]],
             xlabel="Number of Components",
-            title=f"GMM: All Metrics on {self.dataset}",
-            save_path=os.path.join(self.save_path, "all_metrics_multi_axis.png"),
+            title=f"GMM: Shared Metrics on {self.dataset}",
+            save_path=os.path.join(self.save_path, "shared_metrics_multi_axis.png"),
+            colors=[data[2] for data in metric_data[:4]],
             vline_x=chosen_n,
             vline_label=f"Optimal n={chosen_n}" if chosen_n else None
         )
@@ -97,12 +95,10 @@ class EMClustering(BaseClustering):
     def run_gmm(self, 
                 X_train, 
                 mixture_components: int | tuple = (2, 10), 
-                stability_runs=10, 
-                seed: int | None = None, 
+                stability_runs=10,
                 n_init: int = 10, 
                 covariance_type: Literal['full', 'tied', 'diag', 'spherical'] = 'full',
-                metric_weights: dict | None = None
+                n_jobs:int=1
                 ):
-        """
-        Run GMM clustering with configurable metric weights."""
-        return self.run_clustering(X_train, mixture_components, stability_runs, metric_weights, n_init=n_init, covariance_type=covariance_type)
+        """Run GMM clustering with weighted sum selection."""
+        return self.run(X_train, mixture_components, stability_runs, n_init=n_init, covariance_type=covariance_type, n_jobs=n_jobs)

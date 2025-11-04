@@ -187,7 +187,7 @@ def plot_silhouette(X, labels, title="Silhouette Plot", save_path=None, silhouet
         ax.text(-0.05, y_lower + 0.5 * size_cluster_i, str(i))
         y_lower = y_upper + 10
 
-    ax.set_title(f"{title} (Avg Score: {silhouette_avg:.2f})")
+    ax.set_title(f"{title} (Score: {silhouette_avg:.2f})")
     ax.set_xlabel("Silhouette Coefficient Values")
     ax.set_ylabel("Cluster Label")
     ax.axvline(x=float(silhouette_avg), color="red", linestyle="--")
@@ -370,17 +370,17 @@ def plot_multiple_y_axes(x: Union[list, Any],
     lines = []
     for i, (ax, y, label, color, marker) in enumerate(zip(axes, y_series, labels, colors, markers)):
         line, = ax.plot(x, y, color=color, marker=marker, label=label, 
-                       linewidth=2.5, markersize=7, markeredgewidth=1.5, 
+                       linewidth=2, markersize=7, markeredgewidth=1.5, 
                        markeredgecolor='white', zorder=10 - i)
         ax.set_ylabel(label, color=color, fontweight='bold', fontsize=11)
         ax.tick_params(axis='y', labelcolor=color, colors=color, labelsize=9)
         ax.spines['left'].set_color(color)
-        ax.spines['left'].set_linewidth(2.5)
+        ax.spines['left'].set_linewidth(2)
         lines.append(line)
     
     # Optional vertical line
     if vline_x is not None:
-        host.axvline(x=vline_x, color='black', linewidth=2.5, 
+        host.axvline(x=vline_x, color='black', linewidth=2, 
                     linestyle='--', alpha=0.8, zorder=1, 
                     label=vline_label or f'x={vline_x}')
     

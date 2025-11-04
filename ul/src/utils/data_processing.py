@@ -11,80 +11,84 @@ from category_encoders import CountEncoder, TargetEncoder
 import torch
 from torch.utils.data import TensorDataset, DataLoader
 
+from utils.logger import MLLogger
+
 # load data from cache if available
-def load_or_process_data(dataset: str, target: str, method: str, subsample: float, seed: int, cache_dir="", test_size=0.2, val_size=0.2
-    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, pd.Series, dict]:
-    if not cache_dir:
-        cache_dir = os.path.join(os.environ['ROOT'], "cache")
-    hotels_path = os.path.join(os.environ['ROOT'], f"data/hotel_bookings.csv")
-    accidents_path = os.path.join(os.environ['ROOT'], f"data/US_Accidents_March23_1M_rows.csv")
+def load_or_process_data(dataset: str, target: str, method: str, subsample: float, seed: int, cache_dir="", test_size=0.2, val_size=0.2, ml_logger: MLLogger|None=None
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, pd.Series]:
+    if not ml_logger: ml_logger = MLLogger()
+    with ml_logger.log_step("Load Data") as step_info:
+        if not cache_dir:
+            cache_dir = os.path.join(os.environ['ROOT'], "cache")
+        hotels_path = os.path.join(os.environ['ROOT'], f"data/hotel_bookings.csv")
+        accidents_path = os.path.join(os.environ['ROOT'], f"data/US_Accidents_March23_1M_rows.csv")
 
-    print(f"Loading {dataset} data.")
-    os.makedirs(cache_dir, exist_ok=True)
-    cache_file = os.path.join(cache_dir, f"{dataset}_subsample_{int(subsample*100)}.pkl")
-    col_log_data = {}
+        print(f"Loading {dataset} data.")
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_file = os.path.join(cache_dir, f"{dataset}_subsample_{int(subsample*100)}.pkl")
+        col_log_data = {}
 
-    if os.path.exists(cache_file):
-        # load data from cache if available
-        X_train, X_val, X_test, y_train, y_val, y_test = joblib.load(cache_file)
-        total_cleaned = total_rows = len(X_train) + len(X_val) + len(X_test)
+        if os.path.exists(cache_file):
+            # load data from cache if available
+            X_train, X_val, X_test, y_train, y_val, y_test = joblib.load(cache_file)
+            total_cleaned = total_rows = len(X_train) + len(X_val) + len(X_test)
 
-        def get_mem_mb(arr):
-            return arr.memory_usage(deep=True) if hasattr(arr, "memory_usage") else arr.nbytes
-        mem_before = mem_after = (get_mem_mb(X_train) + get_mem_mb(X_val) + get_mem_mb(X_test) + get_mem_mb(y_train) + get_mem_mb(y_val) + get_mem_mb(y_test)) / (1024**2)
+            def get_mem_mb(arr):
+                return arr.memory_usage(deep=True) if hasattr(arr, "memory_usage") else arr.nbytes
+            mem_before = mem_after = (get_mem_mb(X_train) + get_mem_mb(X_val) + get_mem_mb(X_test) + get_mem_mb(y_train) + get_mem_mb(y_val) + get_mem_mb(y_test)) / (1024**2)
 
-    else:
-        # load raw data
-        df = pd.DataFrame()
-        df = pd.read_csv(hotels_path if dataset == "hotels" else accidents_path)
-        if len(df) == 0:
-            raise ValueError(f"Dataset {dataset} is empty or not found.")
-        
-        # subsample
-        df = subsample_dataset(df, target, subsample, seed, method)
-        total_rows = len(df)
+        else:
+            # load raw data
+            df = pd.DataFrame()
+            df = pd.read_csv(hotels_path if dataset == "hotels" else accidents_path)
+            if len(df) == 0:
+                raise ValueError(f"Dataset {dataset} is empty or not found.")
+            
+            # subsample
+            df = subsample_dataset(df, target, subsample, seed, method)
+            total_rows = len(df)
 
-        # clean
-        print(f"Cleaning {dataset} data.")
-        mem_before = df.memory_usage(deep=True).sum() / (1024 ** 2)
-        cleaned_df = clean_hotels(df) if dataset == "hotels" else clean_accidents(df)
-        cleaned_df = general_clean(cleaned_df, target)
-        # Winsorize numeric columns to cap extreme outliers (default 1%/99% bounds)
-        numeric_cols = cleaned_df.select_dtypes(include=[np.number]).columns.tolist()
-        if numeric_cols:cleaned_df = winsorize_df(cleaned_df, numeric_cols, lower=0.01, upper=0.99)
-        total_cleaned = len(cleaned_df)
-        if method == "regression":
-            cleaned_df['Duration_Seconds'] = np.log1p(cleaned_df['Duration_Seconds']) # log(1 + x) to handle zeros/small values
-        mem_after = cleaned_df.memory_usage(deep=True).sum() / (1024 ** 2)
+            # clean
+            print(f"Cleaning {dataset} data.")
+            mem_before = df.memory_usage(deep=True).sum() / (1024 ** 2)
+            cleaned_df = clean_hotels(df) if dataset == "hotels" else clean_accidents(df)
+            cleaned_df = general_clean(cleaned_df, target)
+            # Winsorize numeric columns to cap extreme outliers (default 1%/99% bounds)
+            numeric_cols = cleaned_df.select_dtypes(include=[np.number]).columns.tolist()
+            if numeric_cols:cleaned_df = winsorize_df(cleaned_df, numeric_cols, lower=0.01, upper=0.99)
+            total_cleaned = len(cleaned_df)
+            if method == "regression":
+                cleaned_df['Duration_Seconds'] = np.log1p(cleaned_df['Duration_Seconds']) # log(1 + x) to handle zeros/small values
+            mem_after = cleaned_df.memory_usage(deep=True).sum() / (1024 ** 2)
 
-        # Split into train/val/test sets
-        X = cleaned_df.drop(columns=[target])
-        y = cleaned_df[target]
-        X_temp, X_test, y_temp, y_test = train_test_split(X, y, test_size=test_size, random_state=seed, stratify=(y if method == "classification" else None)) # train/test split
-        X_train, X_val, y_train, y_val = train_test_split(X_temp, y_temp, test_size=val_size/(1-test_size), random_state=seed, stratify=(y_temp if method=="classification" else None)) # second split temp into train and val
-        # transform columns types (cardinality)
-        X_train, X_val, X_test, col_log_data = transform_columns(dataset, X_train, X_val, X_test, y_train)
+            # Split into train/val/test sets
+            X = cleaned_df.drop(columns=[target])
+            y = cleaned_df[target]
+            X_temp, X_test, y_temp, y_test = train_test_split(X, y, test_size=test_size, random_state=seed, stratify=(y if method == "classification" else None)) # train/test split
+            X_train, X_val, y_train, y_val = train_test_split(X_temp, y_temp, test_size=val_size/(1-test_size), random_state=seed, stratify=(y_temp if method=="classification" else None)) # second split temp into train and val
+            # transform columns types (cardinality)
+            X_train, X_val, X_test, col_log_data = transform_columns(dataset, X_train, X_val, X_test, y_train)
 
-        # cache data
-        joblib.dump((X_train, X_val, X_test, y_train, y_val, y_test), cache_file)
-        print(f"Saved processed dataset to {cache_file}")
+            # cache data
+            joblib.dump((X_train, X_val, X_test, y_train, y_val, y_test), cache_file)
+            print(f"Saved processed dataset to {cache_file}")
 
-    info = { # data for logging
-        'used_cached_df' : os.path.exists(cache_file),
-        'n_loaded_rows': total_rows, 
-        'n_cleaned_rows': total_cleaned,
-        'train_shape': f"{X_train.shape[0]} samples x {X_train.shape[1]} features",
-        'validation_shape': f"{X_val.shape[0]} samples x {X_val.shape[1]} features",
-        'test_shape': f"{X_test.shape[0]} samples x {X_test.shape[1]} features",
-        'split_pct': {'train': len(X_train)//total_rows, 'val': len(X_val)//total_rows, 'test': len(X_test)//total_rows},
-        'target_distribution': y_train.value_counts().to_dict() if 'classification' in method.lower() else None,
-        'memory_before_clean': "Used cashed memory" if mem_before==mem_after else f"{mem_before} MB",
-        'memory_after_clean': f"{mem_after} MB",
-        'memory_reduction': f"{round((mem_before - mem_after) / mem_before * 100, 2)}%" if mem_before==mem_after else "0%",
-    }
-    info.update(col_log_data)
+        step_info = { # data for logging
+            'used_cached_df' : os.path.exists(cache_file),
+            'n_loaded_rows': total_rows, 
+            'n_cleaned_rows': total_cleaned,
+            'train_shape': f"{X_train.shape[0]} samples x {X_train.shape[1]} features",
+            'validation_shape': f"{X_val.shape[0]} samples x {X_val.shape[1]} features",
+            'test_shape': f"{X_test.shape[0]} samples x {X_test.shape[1]} features",
+            'split_pct': {'train': len(X_train)//total_rows, 'val': len(X_val)//total_rows, 'test': len(X_test)//total_rows},
+            'target_distribution': y_train.value_counts().to_dict() if 'classification' in method.lower() else None,
+            'memory_before_clean': "Used cashed memory" if mem_before==mem_after else f"{mem_before} MB",
+            'memory_after_clean': f"{mem_after} MB",
+            'memory_reduction': f"{round((mem_before - mem_after) / mem_before * 100, 2)}%" if mem_before==mem_after else "0%",
+        }
+        step_info.update(col_log_data)
 
-    return X_train, X_val, X_test, y_train, y_val, y_test, info
+    return X_train, X_val, X_test, y_train, y_val, y_test
 
 
 def wrap_into_loaders(method, X_train, X_val, X_test, y_train, y_val, y_test, batch_size) -> tuple[DataLoader, DataLoader, DataLoader]:
