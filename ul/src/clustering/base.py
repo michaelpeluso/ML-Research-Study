@@ -51,48 +51,44 @@ class BaseClustering(ABC):
         """Get algorithm-specific metrics (e.g., inertia for KMeans, BIC/AIC for GMM). """
         return {}
     
-    def measure_clustering(self, X_train, n_clusters, stability_runs=1, **kwargs):
+    def measure_clustering(self, X_train, n_clusters, **kwargs):
         """Measure clustering quality for a specific number of clusters."""
-        print(f"Measuring {self.algorithm_name} ({self.param_name}={n_clusters}) with {stability_runs} run(s)")
+        print(f"Measuring {self.algorithm_name} ({self.param_name}={n_clusters})")
         with self.ml_logger.log_step(f"{self.algorithm_name} Hyperparameter Selection ({self.param_name}={n_clusters})") as step_info:  
             start_time = time.perf_counter()
             
             # Run clustering multiple times with different seeds
             all_metrics = []
             models = []
+                        
+            # Fit model and extract results
+            model = self.fit_model(X_train, n_clusters=n_clusters, seed=self.seed, **kwargs)
+            labels, centers = self.extract_results(model, X_train)
+            models.append((model, labels, centers))
             
-            for run_idx in range(stability_runs):
-                seed_i = self.seed + (run_idx * 1000)
-                print(f"Fitting run {run_idx + 1}/{stability_runs} with seed {seed_i}")
-                
-                # Fit model and extract results
-                model = self.fit_model(X_train, n_clusters=n_clusters, seed=seed_i, **kwargs)
-                labels, centers = self.extract_results(model, X_train)
-                models.append((model, labels, centers))
-                
-                # Compute metrics for this run
-                sil_score = -1
-                chi_score = -1
-                dbi_score = -1
-                
-                if n_clusters > 1:
-                    Xs, ys, sample_idx = sample_fit_labels(X_train, labels, sample_size=self.plot_subsample_size, seed=seed_i)
-                    sil_score, _ = self.compute_silhouette(Xs, ys)
-                    chi_score = float(calinski_harabasz_score(X_train, labels))
-                    dbi_score = float(davies_bouldin_score(X_train, labels))
-                
-                dunn_idx = self.dunn_index(X_train, labels, centers)
-                
-                # Get additional algorithm-specific metrics
-                additional_metrics = self.get_additional_metrics(model, X_train)
-                
-                all_metrics.append({
-                    'silhouette_score': sil_score,
-                    'calinski_harabasz_score': chi_score,
-                    'davies_bouldin_score': dbi_score,
-                    'dunn_index': dunn_idx,
-                    **additional_metrics
-                })
+            # Compute metrics for this run
+            sil_score = -1
+            chi_score = -1
+            dbi_score = -1
+            
+            if n_clusters > 1:
+                Xs, ys, sample_idx = sample_fit_labels(X_train, labels, sample_size=self.plot_subsample_size, seed=self.seed)
+                sil_score, _ = self.compute_silhouette(Xs, ys)
+                chi_score = float(calinski_harabasz_score(X_train, labels))
+                dbi_score = float(davies_bouldin_score(X_train, labels))
+            
+            dunn_idx = self.dunn_index(X_train, labels, centers)
+            
+            # Get additional algorithm-specific metrics
+            additional_metrics = self.get_additional_metrics(model, X_train)
+            
+            all_metrics.append({
+                'silhouette_score': sil_score,
+                'calinski_harabasz_score': chi_score,
+                'davies_bouldin_score': dbi_score,
+                'dunn_index': dunn_idx,
+                **additional_metrics
+            })
             
             # Average metrics across runs
             avg_metrics = {}
@@ -100,8 +96,6 @@ class BaseClustering(ABC):
                 values = [m[key] for m in all_metrics if isinstance(m[key], (int, float))]
                 if values:
                     avg_metrics[key] = float(np.mean(values))
-                    if stability_runs > 1:
-                        avg_metrics[f"{key}_std"] = float(np.std(values))
                 else:
                     avg_metrics[key] = all_metrics[0][key]
             
@@ -126,13 +120,6 @@ class BaseClustering(ABC):
             time_taken = time.perf_counter() - start_time
             metrics_str = f"silhouette: {sil_score:.3f}, dunn: {dunn_idx:.3f}, chi: {chi_score:.3f}, dbi: {dbi_score:.3f}"
             
-            if stability_runs > 1:
-                metrics_str += f" [averaged over {stability_runs} runs]"
-                for key in ['silhouette_score', 'calinski_harabasz_score', 'davies_bouldin_score', 'dunn_index']:
-                    std_key = f"{key}_std"
-                    if std_key in avg_metrics:
-                        metrics_str += f", {key}_std: {avg_metrics[std_key]:.3f}"
-            
             for key, val in avg_metrics.items():
                 if key not in ['silhouette_score', 'calinski_harabasz_score', 'davies_bouldin_score', 'dunn_index'] and not key.endswith('_std'):
                     if isinstance(val, (int, float)):
@@ -150,7 +137,6 @@ class BaseClustering(ABC):
                 "davies_bouldin_score": dbi_score,
                 "dunn_index": dunn_idx,
                 "time": time_taken,
-                "stability_runs": stability_runs,
                 **{k: v for k, v in avg_metrics.items() if k not in ['silhouette_score', 'calinski_harabasz_score', 'davies_bouldin_score', 'dunn_index']}
             }
             step_info.update(selection_results)

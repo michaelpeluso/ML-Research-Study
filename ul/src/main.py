@@ -62,10 +62,10 @@ def run_experiments(dataset, target, method, subsample=0.1, seed=42):
 
     # Clustering
     run_clustering(X_train, dataset, save_path, ml_logger, seed, n_jobs=-1,
-        cluster_range=(2, 10), 
+        cluster_range=(2, 15), 
         stability_runs=10, 
-        n_init=10, 
-        plot_subsample_size=10000
+        n_init=50, 
+        plot_subsample_size=25000
     )
 
     # Dimensionality Reduction
