@@ -7,7 +7,7 @@ from typing import Any
 from sklearn.metrics import adjusted_rand_score, silhouette_samples, silhouette_score, calinski_harabasz_score, davies_bouldin_score
 from joblib import Parallel, delayed
 
-from utils.plotter import plot_cluster_scatter, plot_multiple_y_axes, plot_silhouette, plot_bar
+from utils.plotter import plot_silhouette
 from utils.logger import MLLogger, print_t as print
 from utils.data_processing import sample_fit_labels
 
@@ -145,7 +145,7 @@ class BaseClustering(ABC):
     
     
     def generate_plots(self, X_train, labels, n_clusters, sil_score, sample_sil_vals=None, sample_idx=None, centers=None):
-        """Generate silhouette, scatter, and cluster size plots for a specific number of clusters."""
+        """Generate silhouette and cluster size plots for a specific number of clusters."""
         cluster_dir = os.path.join(self.save_path, "clusters", f"{self.dir_prefix}{n_clusters}")
         os.makedirs(cluster_dir, exist_ok=True)
 
@@ -165,36 +165,6 @@ class BaseClustering(ABC):
                            sample_indices=sample_idx)
         else:
             print(f"No silhouette values for {self.dir_prefix}={n_clusters}; skipping silhouette plot.")
-
-        # Cluster scatter plot - always generate, subsample if needed
-        print(f"Generating scatter plot for {self.dir_prefix}={n_clusters}")
-        scatter_path = os.path.join(cluster_dir, "scatter.png")
-        
-        # Use existing sample_idx if available, otherwise create new subsample for scatter
-        if sample_idx is not None:
-            X_for_scatter = X_train[sample_idx]
-            labels_for_scatter = np.array(labels)[sample_idx]
-        elif len(X_train) > self.plot_subsample_size:
-            # Subsample for scatter plot
-            Xs_scatter, ys_scatter, idx_scatter = sample_fit_labels(X_train, labels, sample_size=self.plot_subsample_size, seed=self.seed)
-            X_for_scatter = Xs_scatter
-            labels_for_scatter = ys_scatter
-        else:
-            X_for_scatter = X_train
-            labels_for_scatter = labels
-
-        plot_cluster_scatter(X_for_scatter, labels_for_scatter, method='pca',
-                            title=f"Cluster Scatter ({self.dir_prefix}={n_clusters}) on {self.dataset}",
-                            save_path=scatter_path, centers=centers)
-
-        # Cluster sizes distribution
-        print(f"Generating cluster sizes distribution for {self.dir_prefix}={n_clusters}")
-        cluster_sizes = [int(np.sum(labels == i)) for i in range(n_clusters)]
-        sizes_path = os.path.join(cluster_dir, "cluster_sizes.png")
-        plot_bar([f'{self.cluster_label} {i}' for i in range(n_clusters)], cluster_sizes,
-                 xlabel=self.cluster_label, ylabel='Number of Samples',
-                 title=f'{self.cluster_label} Sizes ({self.dir_prefix}={n_clusters}) on {self.dataset}',
-                 save_path=sizes_path, color=self.cluster_color)
 
     def compute_silhouette(self, X: np.ndarray, labels: np.ndarray):
         """ Compute silhouette average and per-sample silhouette values for provided X and labels. Measures cohesion and separation for each point. """
@@ -289,6 +259,7 @@ class BaseClustering(ABC):
     
     def run(self, X_train, n_clusters: int | tuple = (2, 10), stability_runs=10, n_jobs: int = 1, **kwargs):
         """Generic clustering runner that works for all algorithms."""
+        start_log_index = len(self.ml_logger.current_logs)
         with self.ml_logger.log_step(f"{self.algorithm_name} Clustering ({self.param_name}={n_clusters})") as step_info:
             function_start = time.perf_counter()
 
@@ -355,7 +326,7 @@ class BaseClustering(ABC):
             self.ml_logger.log_metric('total_duration', function_elapsed)
             print(f"Total execution time: {function_elapsed:.2f}s")
 
-        self.ml_logger.generate_log_report(output_file=f"{self.save_path}/execution_report.txt")
+        self.ml_logger.generate_log_report(output_file=f"{self.save_path}/execution_report.txt", start_index=start_log_index)
         return model
     
     def _compute_composite_scores(self, selection_results):
@@ -434,13 +405,3 @@ class BaseClustering(ABC):
                               sample_indices=sample_idx)
             else:
                 print(f"Skipping silhouette plot for evaluation: silhouette undefined for {self.dir_prefix}={chosen_n}")
-        
-        # Cluster scatter plot
-        scatter_src = os.path.join(cluster_dir, "scatter.png")
-        scatter_dst = os.path.join(self.save_path, "scatter.png")
-        if os.path.exists(scatter_src):
-            shutil.copy(scatter_src, scatter_dst)
-        else:
-            # Use subsampled data for scatter plot
-            Xs_scatter, ys_scatter, _ = sample_fit_labels(X_train, labels, self.plot_subsample_size, self.seed)
-            plot_cluster_scatter(Xs_scatter, ys_scatter, method='pca',title=f"Cluster Scatter for {self.algorithm_name} ({self.dir_prefix}={chosen_n}) on {self.dataset}", save_path=scatter_dst, centers=centers)

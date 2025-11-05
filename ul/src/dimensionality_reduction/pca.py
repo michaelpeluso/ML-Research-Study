@@ -49,3 +49,20 @@ class PCAReduction(BaseDR):
             loadings[f'PC{i+1}'] = top_features
         
         return loadings
+    
+    def compute_variance_thresholds(self, results):
+        """Compute n_components needed for 80%, 90%, 95%, 99% variance."""
+        thresholds = {}
+        
+        for threshold in [0.80, 0.90, 0.95, 0.99]:
+            for r in results:
+                if r['explained_variance'] is not None:
+                    var = r['explained_variance']
+                    if isinstance(var, (list, np.ndarray)):
+                        cumsum = np.cumsum(var)
+                        if cumsum[-1] >= threshold:
+                            n_needed = np.argmax(cumsum >= threshold) + 1
+                            thresholds[f'{int(threshold*100)}%'] = int(n_needed)
+                            break
+        
+        return thresholds

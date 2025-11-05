@@ -138,13 +138,14 @@ class MLLogger:
             else:
                 f.write(f"{indent_str}{formatted_key}: {value}\n")
 
-    def generate_log_report(self, output_file, part:int=0):
+    def generate_log_report(self, output_file, part:int=0, start_index:int=0):
         """generate a detailed report from current logs, with analysis summary at top aggregating all data."""
         if not output_file:
             output_file = os.path.join(os.environ['ROOT'], "logs/experiment_report.txt")
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
         
-        if not self.current_logs:
+        logs_to_report = self.current_logs[start_index:] if start_index > 0 else self.current_logs
+        if not logs_to_report:
             print("No logs available for this run.")
             return
 
@@ -176,7 +177,7 @@ class MLLogger:
             f.write("\n")
 
             # all steps - uniform formatting
-            for i, log in enumerate(self.current_logs, 1):
+            for i, log in enumerate(logs_to_report, 1):
                 if 'step' not in log:
                     continue
                     

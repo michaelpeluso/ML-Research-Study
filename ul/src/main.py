@@ -1,12 +1,14 @@
 
 import os, sys
+import time
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
 if script_dir not in sys.path: sys.path.insert(0, script_dir)
 os.environ['ROOT'] = os.path.dirname(script_dir)
 
-from utils.data_processing import load_or_process_data
+from dimensionality_reduction.base import generate_dr_comparison_table
+from utils.data_processing import load_or_process_data, split_processed_data
 from utils.logger import MLLogger
 from clustering import KMeansClustering, EMClustering
 from dimensionality_reduction import PCAReduction, ICAReduction, RandomProjection
@@ -15,6 +17,8 @@ from dimensionality_reduction import PCAReduction, ICAReduction, RandomProjectio
 # Clustering Helper
 # -------------------------------------
 def run_clustering(X_train, dataset, save_path, ml_logger, seed, n_jobs, cluster_range, stability_runs, n_init, plot_subsample_size):
+    start = time.perf_counter()
+
     # K-Means Clustering
     print("\n" + "-"*80 + "\nK-Means Clustering\n" + "-"*80)
     kmeans = KMeansClustering(dataset, f"{save_path}/clustering/kmeans", ml_logger, plot_subsample_size=plot_subsample_size, seed=seed)
@@ -25,10 +29,14 @@ def run_clustering(X_train, dataset, save_path, ml_logger, seed, n_jobs, cluster
     em = EMClustering(dataset, f"{save_path}/clustering/em", ml_logger, plot_subsample_size=plot_subsample_size, seed=seed)
     em.run_gmm(X_train, mixture_components=cluster_range, stability_runs=stability_runs, n_init=n_init, covariance_type='full', n_jobs=n_jobs)
 
+    print(f"\nClustering completed on {dataset.upper()} - {time.perf_counter() - start:.2f}s\n")
+
 # -------------------------------------
 # Dimensionality Reduction Helper
 # -------------------------------------
 def run_dimensionality_reduction(X_train, y_train, dataset, save_path, ml_logger, seed, method, n_jobs, n_components_range):
+    start = time.perf_counter()
+    
     # PCA
     print("\n" + "-"*80 + "\nPCA\n" + "-"*80)
     pca = PCAReduction(dataset, f"{save_path}/dr/pca", ml_logger, seed=seed)
@@ -44,12 +52,18 @@ def run_dimensionality_reduction(X_train, y_train, dataset, save_path, ml_logger
     rp = RandomProjection(dataset, f"{save_path}/dr/rp", ml_logger, seed=seed)
     rp.run_dimensionality_reduction(X_train, y_train, n_components_range, task=method)
 
+    # Generate DR comparison table
+    print("\n" + "-"*80 + "\nGenerating DR Comparison Table\n" + "-"*80)
+    generate_dr_comparison_table(save_path)
+
+    print(f"\nDimensionality Reduction completed on {dataset.upper()} - {time.perf_counter() - start:.2f}s\n")
+
 # -------------------------------------
 # Experiment Implementation
 # -------------------------------------
-def run_experiments(dataset, target, method, subsample=0.1, seed=42):    
+def run_experiments(dataset, target, method, subsample=0.1, seed=42, n_jobs=1):    
     print("\n" + "="*80 + f"\nRUNNING EXPERIMENTS ON: {dataset.upper()}\n" + "="*80)
-    
+    start = time.perf_counter()    
     save_path = os.path.join(os.environ['ROOT'], f"figures/{dataset}")
     os.makedirs(save_path, exist_ok=True)
     
@@ -58,32 +72,39 @@ def run_experiments(dataset, target, method, subsample=0.1, seed=42):
     ml_logger.set_experiment_context(dataset=dataset, target=target, method=method)
     
     # Load data
-    X_train, _, _, y_train, _, _ = load_or_process_data(dataset, target, method, subsample, seed=seed, ml_logger=ml_logger)
+    X_full, y_full = load_or_process_data(dataset, target, method, subsample, seed=seed, ml_logger=ml_logger)
 
-    # Clustering
-    run_clustering(X_train, dataset, save_path, ml_logger, seed, n_jobs=-1,
+    '''
+    # Clustering on full dataset
+    run_clustering(X_full, dataset, save_path, ml_logger, seed, n_jobs=n_jobs,
         cluster_range=(2, 15), 
         stability_runs=10, 
-        n_init=50, 
-        plot_subsample_size=25000
+        n_init=5,#25, 
+        plot_subsample_size=5000,#25000
     )
+    '''
 
     # Dimensionality Reduction
-    run_dimensionality_reduction(X_train, y_train, dataset, save_path, ml_logger, seed, method, n_jobs=-1,
+    run_dimensionality_reduction(X_full, y_full, dataset, save_path, ml_logger, seed, method, n_jobs=n_jobs,
         n_components_range=(2, 15),
     )
 
-    print("\n" + "="*80 + f"\nCOMPLETED: {dataset.upper()}\n" + "="*80)
+    # TODO: Steps 4-5 (Neural Networks) - only when implementing supervised learning
+    # Split data for neural network training:
+    # X_train, X_val, X_test, y_train, y_val, y_test = split_processed_data(
+    #     X_full, y_full, method=method, test_size=0.2, val_size=0.2, seed=seed, ml_logger=ml_logger
+    # )
+    # Then use X_train, X_val, X_test for neural network experiments
+
+    print("\n" + "="*80 + f"\nCOMPLETED: {dataset.upper()}\nWall Time: {time.perf_counter() - start:.2f}s\n" + "="*80)
+
+    ml_logger.generate_log_report(output_file=os.path.join(save_path, "execution_report.txt"),start_index=0)
 
 # -------------------------------------
 # Full Experiment Runner
 # -------------------------------------
 def main():
-    """Run experiments on both datasets."""
-    
-    import random
-    seed = int(random.random() * 1000)
-    subsample = 0.1  # For testing
+    start = time.perf_counter()
     
     # Dataset configurations
     datasets = [
@@ -99,17 +120,19 @@ def main():
         }
     ]
     
+    import random
     # Run on all datasets
     for config in datasets:
         run_experiments(
             dataset=config['dataset'],
             target=config['target'],
             method=config['method'],
-            subsample=subsample,
-            seed=seed
+            subsample=0.1,
+            seed=int(random.random() * 1000),
+            n_jobs=10
         )
 
-    print("\n" + "="*80 + "\n" + "-"*80 + "\nALL EXPERIMENTS COMPLETE!\n" + "-"*80 + "\n" + "="*80 + "\n")
+    print("\n" + "="*80 + "\n" + "-"*80 + f"\nALL EXPERIMENTS COMPLETE\nWall Time: {time.perf_counter() - start:.2f}s" + "-"*80 + "\n" + "="*80 + "\n")
 
 
 if __name__ == "__main__":

@@ -38,7 +38,7 @@ class RandomProjection(BaseDR):
         return None
     
     def reconstruction_error(self, X_original, X_transformed, model):
-        """Compute pairwise distance preservation error. """
+        """Compute pairwise distance preservation metrics."""
         n_samples = min(1000, X_original.shape[0])  # Sample for efficiency
         indices = np.random.RandomState(self.seed).choice(X_original.shape[0], n_samples, replace=False)
         
@@ -47,42 +47,24 @@ class RandomProjection(BaseDR):
         
         # Compute pairwise distances
         from scipy.spatial.distance import pdist
-        dist_orig = pdist(X_sample_orig, metric='euclidean')
-        dist_proj = pdist(X_sample_proj, metric='euclidean')
-        
-        # Normalize distances
-        dist_orig_norm = dist_orig / (np.mean(dist_orig) + 1e-10)
-        dist_proj_norm = dist_proj / (np.mean(dist_proj) + 1e-10)
-        
-        # Mean squared error of normalized distances
-        mse = float(np.mean((dist_orig_norm - dist_proj_norm) ** 2))
-        
-        return mse
-    
-    def get_reconstruction_quality(self, X_original, X_transformed):
-        """Measure how well pairwise distances are preserved."""
-        n_samples = min(1000, X_original.shape[0])
-        indices = np.random.RandomState(self.seed).choice(X_original.shape[0], n_samples, replace=False)
-        
-        X_sample_orig = X_original[indices]
-        X_sample_proj = X_transformed[indices]
-        
-        from scipy.spatial.distance import pdist
         from scipy.stats import pearsonr
         
         dist_orig = pdist(X_sample_orig, metric='euclidean')
         dist_proj = pdist(X_sample_proj, metric='euclidean')
         
-        # Correlation between distance matrices
-        correlation, _ = pearsonr(dist_orig, dist_proj)
+        # Normalize distances for MSE
+        dist_orig_norm = dist_orig / (np.mean(dist_orig) + 1e-10)
+        dist_proj_norm = dist_proj / (np.mean(dist_proj) + 1e-10)
+        mse = float(np.mean((dist_orig_norm - dist_proj_norm) ** 2))
         
-        # Relative error
+        # Store additional metrics for reporting (not returned but could be logged)
+        correlation, _ = pearsonr(dist_orig, dist_proj)
         relative_error = float(np.mean(np.abs(dist_orig - dist_proj) / (dist_orig + 1e-10)))
         
-        return {
-            'distance_correlation': float(correlation), #type:ignore
-            'relative_distance_error': relative_error
-        }
+        # Log these for debugging/analysis
+        print(f"    Distance correlation: {correlation:.4f}, Relative error: {relative_error:.4f}")
+        
+        return mse
     
     @staticmethod
     def johnson_lindenstrauss_min_dim(n_samples, eps=0.1):

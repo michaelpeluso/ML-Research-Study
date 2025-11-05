@@ -4,7 +4,6 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from sklearn.decomposition import PCA
 
 matplotlib.use('Agg')
 
@@ -224,72 +223,6 @@ def plot_scatter(x_list, y_list, labels=None, xlabel="", ylabel="", title="", sa
     plt.close()
 
 
-def plot_cluster_scatter(X, labels, method='pca', title="Cluster Scatter Plot", save_path=None, centers=None):
-    """
-    Scatter plot of clusters after dimensionality reduction to 2D.
-    """
-    if X.shape[1] > 2:
-        reducer = PCA(n_components=2, random_state=42)
-        X_reduced = reducer.fit_transform(X)
-        # Transform centers to same 2D space if provided
-        if centers is not None:
-            centers_reduced = reducer.transform(centers)
-        else:
-            centers_reduced = None
-    else:
-        X_reduced = X
-        centers_reduced = centers
-    
-    unique_labels = np.unique(labels)
-    n_clusters = len(unique_labels)
-    x_list = []
-    y_list = []
-    labels_list = []
-    # Use the same colormap as silhouette plot for consistency
-    colors = [plt.cm.nipy_spectral(float(i) / n_clusters) for i in range(n_clusters)]  # type: ignore
-    
-    for k, col in zip(unique_labels, colors):
-        class_member_mask = (labels == k)
-        xy = X_reduced[class_member_mask]
-        x_list.append(xy[:, 0])
-        y_list.append(xy[:, 1])
-        labels_list.append(f'Cluster {k}')
-    
-    # Create the scatter plot
-    plt.figure(figsize=(8, 6))
-    
-    # Plot data points
-    for i, (x, y, lbl, col) in enumerate(zip(x_list, y_list, labels_list, colors)):
-        plt.scatter(x, y, label=lbl, color=col, alpha=0.7)
-    
-    # Plot cluster centers if provided
-    if centers_reduced is not None:
-        # Plot each center in its cluster's color
-        for i, col in enumerate(colors):
-            if i == 0:
-                # Only add label for the first center (shown as black 'X' in legend)
-                plt.scatter(centers_reduced[i, 0], centers_reduced[i, 1], 
-                           marker='X', s=150, linewidths=1, 
-                           color=col, edgecolors='white', 
-                           label='Centers', zorder=10)
-            else:
-                # Other centers without label
-                plt.scatter(centers_reduced[i, 0], centers_reduced[i, 1], 
-                           marker='X', s=150, linewidths=1, 
-                           color=col, edgecolors='white', 
-                           zorder=10)
-    
-    plt.xlabel(f'{method.upper()} Component 1')
-    plt.ylabel(f'{method.upper()} Component 2')
-    plt.title(title)
-    plt.legend()
-    plt.grid(True)
-    if save_path:
-        plt.savefig(save_path, dpi=300)
-    else:
-        plt.show()
-    plt.close()
-
 
 def plot_bar(x_labels, values, xlabel="", ylabel="", title="", save_path=None, color='skyblue'):
     """
@@ -413,4 +346,288 @@ def plot_multiple_y_axes(x: Union[list, Any],
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
     else:
         plt.show()
+    plt.close()
+
+
+def plot_component_heatmap(data, component_labels, dataset_name, title, colorbar_label, 
+                           save_path=None, vmin=None, vmax=None, 
+                           xlabel='Feature Index', ylabel='Component'):
+    """Generic heatmap for DR component visualization."""
+    n_components = data.shape[0]
+    n_features = data.shape[1]
+    
+    # Auto-scale if not provided
+    if vmin is None:
+        vmin = -max(abs(data.min()), abs(data.max()))
+    if vmax is None:
+        vmax = max(abs(data.min()), abs(data.max()))
+    
+    # Auto-scale figure height based on number of components
+    fig_height = max(6, n_components * 0.4)
+    fig, ax = plt.subplots(figsize=(14, fig_height))
+    im = ax.imshow(data, cmap='RdBu_r', aspect='auto', vmin=vmin, vmax=vmax)
+    
+    ax.set_xlabel(xlabel, fontsize=13, fontweight='bold')
+    ax.set_ylabel(ylabel, fontsize=13, fontweight='bold')
+    ax.set_title(f'{title} ({dataset_name})', fontsize=15, fontweight='bold', pad=15)
+    
+    # Y-axis labels - auto-scale font size based on number of components
+    ax.set_yticks(range(n_components))
+    label_fontsize = max(7, min(10, 120 // n_components))  # Scale between 7-10
+    ax.set_yticklabels(component_labels, fontsize=label_fontsize)
+    
+    # X-axis: auto-scale ticks for readability
+    if n_features > 20:
+        tick_step = max(1, n_features // 10)
+        ax.set_xticks(range(0, n_features, tick_step))
+        tick_fontsize = max(7, min(9, 150 // (n_features // tick_step)))  # Scale font
+        ax.set_xticklabels([str(i) for i in range(0, n_features, tick_step)], 
+                          fontsize=tick_fontsize)
+    else:
+        # Show all ticks if ≤20 features
+        ax.set_xticks(range(n_features))
+        ax.set_xticklabels([str(i) for i in range(n_features)], fontsize=9)
+    
+    # Colorbar with better formatting
+    cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label(colorbar_label, fontsize=12, fontweight='bold')
+    cbar.ax.tick_params(labelsize=10)
+    
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=200, bbox_inches='tight')
+        print(f"Saved component heatmap to {save_path}")
+    plt.close()
+
+
+def plot_dr_2d_projection(X_transformed, y, method_name, dataset_name, save_path=None, xlabel='Component 1', ylabel='Component 2', components=None):
+    """
+    2D scatter plot of first 2 components colored by target.
+    
+    Args:
+        components: Optional array of shape (n_features, n_components) for PCA/ICA.
+                   For PCA: use model.components_.T
+                   For ICA: use model.mixing_
+                   Component vectors will be drawn as arrows showing feature contributions.
+    """
+    if X_transformed.shape[1] < 2:
+        print("Need at least 2 components for 2D plot")
+        return
+    
+    fig, ax = plt.subplots(figsize=(12, 9))
+    
+    # Determine if classification or regression
+    unique_vals = np.unique(y)
+    is_classification = len(unique_vals) <= 20
+    
+    if is_classification:
+        n_classes = len(unique_vals)
+        if n_classes == 2:
+            # Binary classification: use contrasting colors (red/blue)
+            colors = ['#E74C3C', '#3498DB']  # Red and Blue
+            for idx, class_val in enumerate(sorted(unique_vals)):
+                mask = (y == class_val)
+                ax.scatter(X_transformed[mask, 0], X_transformed[mask, 1],
+                          c=colors[idx], label=f'Class {int(class_val)}',
+                          alpha=0.7, s=30, edgecolors='white', linewidth=0.5)
+            ax.legend(loc='best', fontsize=12, framealpha=0.9, title='Target', title_fontsize=13)
+        else:
+            # Multi-class: use qualitative colormap
+            scatter = ax.scatter(X_transformed[:, 0], X_transformed[:, 1], 
+                               c=y, cmap='tab10' if n_classes <= 10 else 'tab20',
+                               alpha=0.7, s=30, edgecolors='white', linewidth=0.5)
+            cbar = plt.colorbar(scatter, ax=ax)
+            cbar.set_label('Class', fontsize=12, fontweight='bold')
+            cbar.ax.tick_params(labelsize=10)
+    else:
+        # Continuous colormap for regression
+        scatter = ax.scatter(X_transformed[:, 0], X_transformed[:, 1], 
+                           c=y, cmap='viridis', alpha=0.7, s=30, 
+                           edgecolors='white', linewidth=0.5)
+        cbar = plt.colorbar(scatter, ax=ax)
+        cbar.set_label('Target Value', fontsize=12, fontweight='bold')
+        cbar.ax.tick_params(labelsize=10)
+    
+    ax.set_xlabel(xlabel, fontsize=13, fontweight='bold')
+    ax.set_ylabel(ylabel, fontsize=13, fontweight='bold')
+    ax.set_title(f'{method_name} 2D Projection - {dataset_name.title()}', 
+                fontsize=16, fontweight='bold', pad=15)
+    ax.grid(True, alpha=0.25, linestyle='--', linewidth=0.8)
+    
+    # Add component vectors if provided
+    if components is not None and components.shape[1] >= 2:
+        # Scale vectors for visibility
+        x_range = X_transformed[:, 0].max() - X_transformed[:, 0].min()
+        y_range = X_transformed[:, 1].max() - X_transformed[:, 1].min()
+        scale_factor = min(x_range, y_range) * 0.3  # Use 30% of plot range
+        
+        # Get top N most important features (by magnitude)
+        magnitudes = np.sqrt(components[:, 0]**2 + components[:, 1]**2)
+        top_indices = np.argsort(magnitudes)[-10:]  # Top 10 features
+        
+        for idx in top_indices:
+            vec_x = components[idx, 0] * scale_factor
+            vec_y = components[idx, 1] * scale_factor
+            ax.arrow(0, 0, vec_x, vec_y, 
+                    head_width=scale_factor*0.05, head_length=scale_factor*0.08,
+                    fc='red', ec='darkred', alpha=0.7, linewidth=2, zorder=5)
+            # Add feature label at arrow tip
+            ax.text(vec_x*1.15, vec_y*1.15, f'F{idx}', 
+                   fontsize=8, ha='center', va='center',
+                   bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7, edgecolor='red'))
+    
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=200, bbox_inches='tight')
+        print(f"Saved 2D projection to {save_path}")
+    plt.close()
+
+
+def plot_dr_3d_projection(X_transformed, y, method_name, dataset_name, save_path=None,
+                          xlabel='Component 1', ylabel='Component 2', zlabel='Component 3', components=None):
+    """
+    3D scatter plot of first 3 components colored by target.
+    
+    Args:
+        components: Optional array of shape (n_features, n_components) for PCA/ICA.
+                   Component vectors will be drawn as arrows showing feature contributions.
+    """
+    from mpl_toolkits.mplot3d import Axes3D
+    
+    if X_transformed.shape[1] < 3:
+        print("Need at least 3 components for 3D plot")
+        return
+    
+    fig = plt.figure(figsize=(14, 10))
+    ax = fig.add_subplot(111, projection='3d')
+    
+    # Determine if classification or regression
+    unique_vals = np.unique(y)
+    is_classification = len(unique_vals) <= 20
+    
+    if is_classification:
+        n_classes = len(unique_vals)
+        if n_classes == 2:
+            # Binary classification: use contrasting colors
+            colors = ['#E74C3C', '#3498DB']  # Red and Blue
+            for idx, class_val in enumerate(sorted(unique_vals)):
+                mask = (y == class_val)
+                ax.scatter(X_transformed[mask, 0], X_transformed[mask, 1], X_transformed[mask, 2],
+                          c=colors[idx], label=f'Class {int(class_val)}',
+                          alpha=0.6, s=25, edgecolors='white', linewidth=0.3)
+            ax.legend(loc='best', fontsize=11, framealpha=0.9, title='Target')
+        else:
+            # Multi-class
+            scatter = ax.scatter(X_transformed[:, 0], X_transformed[:, 1], X_transformed[:, 2],
+                               c=y, cmap='tab10' if n_classes <= 10 else 'tab20',
+                               alpha=0.6, s=25, edgecolors='white', linewidth=0.3)
+            cbar = plt.colorbar(scatter, ax=ax, shrink=0.6, aspect=10, pad=0.1)
+            cbar.set_label('Class', fontsize=11, fontweight='bold')
+    else:
+        scatter = ax.scatter(X_transformed[:, 0], X_transformed[:, 1], X_transformed[:, 2],
+                           c=y, cmap='viridis', alpha=0.6, s=25, 
+                           edgecolors='white', linewidth=0.3)
+        cbar = plt.colorbar(scatter, ax=ax, shrink=0.6, aspect=10, pad=0.1)
+        cbar.set_label('Target', fontsize=11, fontweight='bold')
+    
+    ax.set_xlabel(xlabel, fontsize=12, fontweight='bold')
+    ax.set_ylabel(ylabel, fontsize=12, fontweight='bold')
+    ax.set_zlabel(zlabel, fontsize=12, fontweight='bold')
+    ax.set_title(f'{method_name} 3D Projection - {dataset_name.title()}', 
+                fontsize=15, fontweight='bold', pad=20)
+    
+    # Add component vectors if provided
+    if components is not None and components.shape[1] >= 3:
+        # Scale vectors for visibility
+        ranges = [X_transformed[:, i].max() - X_transformed[:, i].min() for i in range(3)]
+        scale_factor = min(ranges) * 0.25  # Use 25% of plot range
+        
+        # Get top N most important features (by 3D magnitude)
+        magnitudes = np.sqrt(components[:, 0]**2 + components[:, 1]**2 + components[:, 2]**2)
+        top_indices = np.argsort(magnitudes)[-8:]  # Top 8 features for 3D (less cluttered)
+        
+        for idx in top_indices:
+            vec_x = components[idx, 0] * scale_factor
+            vec_y = components[idx, 1] * scale_factor
+            vec_z = components[idx, 2] * scale_factor
+            
+            # Draw arrow as a line with point at tip
+            ax.plot([0, vec_x], [0, vec_y], [0, vec_z], 
+                   'r-', linewidth=2.5, alpha=0.8, zorder=5)
+            ax.scatter(vec_x, vec_y, vec_z, 
+                      c='darkred', s=100, marker='o', alpha=0.9, zorder=6)
+            
+            # Add feature label at arrow tip
+            ax.text(vec_x*1.15, vec_y*1.15, vec_z*1.15, f'F{idx}', 
+                   fontsize=8, ha='center', va='center',
+                   bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8, edgecolor='red'))
+    
+    # Better viewing angle
+    ax.view_init(elev=20, azim=45)
+    
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=200, bbox_inches='tight')
+        print(f"Saved 3D projection to {save_path}")
+    plt.close()
+
+
+def plot_ica_kurtosis(X_transformed, dataset_name, save_path=None):
+    """
+    Plot kurtosis values for each ICA component.
+    High absolute kurtosis indicates non-Gaussianity (what ICA optimizes for).
+    """
+    n_components = X_transformed.shape[1]
+    
+    # Compute kurtosis for each component
+    kurtosis_values = []
+    for i in range(n_components):
+        x = X_transformed[:, i]
+        x_centered = x - np.mean(x)
+        x_std = np.std(x)
+        if x_std == 0:
+            kurt = 0
+        else:
+            kurt = np.mean((x_centered / x_std) ** 4) - 3
+        kurtosis_values.append(kurt)
+    
+    # Create bar plot
+    fig, ax = plt.subplots(figsize=(12, 6))
+    
+    # Color bars based on kurtosis magnitude
+    colors = ['#E74C3C' if abs(k) > 1.0 else '#3498DB' if abs(k) > 0.5 else '#95A5A6' 
+              for k in kurtosis_values]
+    
+    bars = ax.bar(range(1, n_components + 1), [abs(k) for k in kurtosis_values], 
+                  color=colors, edgecolor='black', linewidth=1.2, alpha=0.8)
+    
+    # Add value labels on bars
+    for i, (bar, kurt) in enumerate(zip(bars, kurtosis_values)):
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2., height,
+               f'{kurt:.2f}',
+               ha='center', va='bottom', fontsize=9, fontweight='bold')
+    
+    ax.set_xlabel('Independent Component', fontsize=13, fontweight='bold')
+    ax.set_ylabel('Absolute Kurtosis', fontsize=13, fontweight='bold')
+    ax.set_title(f'ICA Component Non-Gaussianity (Kurtosis) - {dataset_name.title()}', 
+                fontsize=15, fontweight='bold', pad=15)
+    ax.set_xticks(range(1, n_components + 1))
+    ax.set_xticklabels([f'IC{i+1}' for i in range(n_components)], fontsize=10)
+    ax.grid(True, alpha=0.3, axis='y', linestyle='--', linewidth=0.8)
+    
+    # Add legend explaining colors
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor='#E74C3C', edgecolor='black', label='High (|k| > 1.0)'),
+        Patch(facecolor='#3498DB', edgecolor='black', label='Medium (0.5 < |k| ≤ 1.0)'),
+        Patch(facecolor='#95A5A6', edgecolor='black', label='Low (|k| ≤ 0.5)')
+    ]
+    ax.legend(handles=legend_elements, loc='upper right', fontsize=10, 
+             title='Non-Gaussianity', title_fontsize=11, framealpha=0.9)
+    
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=200, bbox_inches='tight')
+        print(f"Saved ICA kurtosis plot to {save_path}")
     plt.close()

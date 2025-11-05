@@ -13,9 +13,10 @@ from torch.utils.data import TensorDataset, DataLoader
 
 from utils.logger import MLLogger
 
-# load data from cache if available
-def load_or_process_data(dataset: str, target: str, method: str, subsample: float, seed: int, cache_dir="", test_size=0.2, val_size=0.2, ml_logger: MLLogger|None=None
-    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, pd.Series]:
+# load data from cache if available - returns FULL dataset for unsupervised learning
+def load_or_process_data(dataset: str, target: str, method: str, subsample: float, seed: int, cache_dir="", ml_logger: MLLogger|None=None
+    ) -> tuple[np.ndarray, np.ndarray]:
+    """Load and process the full dataset"""
     if not ml_logger: ml_logger = MLLogger()
     with ml_logger.log_step("Load Data") as step_info:
         if not cache_dir:
@@ -25,17 +26,17 @@ def load_or_process_data(dataset: str, target: str, method: str, subsample: floa
 
         print(f"Loading {dataset} data.")
         os.makedirs(cache_dir, exist_ok=True)
-        cache_file = os.path.join(cache_dir, f"{dataset}_subsample_{int(subsample*100)}.pkl")
+        cache_file = os.path.join(cache_dir, f"{dataset}_subsample_{int(subsample*100)}_full.pkl")
         col_log_data = {}
 
         if os.path.exists(cache_file):
             # load data from cache if available
-            X_train, X_val, X_test, y_train, y_val, y_test = joblib.load(cache_file)
-            total_cleaned = total_rows = len(X_train) + len(X_val) + len(X_test)
+            X_full, y_full = joblib.load(cache_file)
+            total_cleaned = total_rows = len(X_full)
 
             def get_mem_mb(arr):
                 return arr.memory_usage(deep=True) if hasattr(arr, "memory_usage") else arr.nbytes
-            mem_before = mem_after = (get_mem_mb(X_train) + get_mem_mb(X_val) + get_mem_mb(X_test) + get_mem_mb(y_train) + get_mem_mb(y_val) + get_mem_mb(y_test)) / (1024**2)
+            mem_before = mem_after = (get_mem_mb(X_full) + get_mem_mb(y_full)) / (1024**2)
 
         else:
             # load raw data
@@ -61,33 +62,66 @@ def load_or_process_data(dataset: str, target: str, method: str, subsample: floa
                 cleaned_df['Duration_Seconds'] = np.log1p(cleaned_df['Duration_Seconds']) # log(1 + x) to handle zeros/small values
             mem_after = cleaned_df.memory_usage(deep=True).sum() / (1024 ** 2)
 
-            # Split into train/val/test sets
+            # Separate X and y
             X = cleaned_df.drop(columns=[target])
             y = cleaned_df[target]
-            X_temp, X_test, y_temp, y_test = train_test_split(X, y, test_size=test_size, random_state=seed, stratify=(y if method == "classification" else None)) # train/test split
-            X_train, X_val, y_train, y_val = train_test_split(X_temp, y_temp, test_size=val_size/(1-test_size), random_state=seed, stratify=(y_temp if method=="classification" else None)) # second split temp into train and val
-            # transform columns types (cardinality)
-            X_train, X_val, X_test, col_log_data = transform_columns(dataset, X_train, X_val, X_test, y_train)
+            
+            # Transform columns using the full dataset
+            X_full, col_log_data = transform_full_dataset(dataset, X, y)
+            y_full = y.values if hasattr(y, 'values') else y
 
             # cache data
-            joblib.dump((X_train, X_val, X_test, y_train, y_val, y_test), cache_file)
-            print(f"Saved processed dataset to {cache_file}")
+            joblib.dump((X_full, y_full), cache_file)
+            print(f"Saved processed full dataset to {cache_file}")
 
         step_info = { # data for logging
             'used_cached_df' : os.path.exists(cache_file),
             'n_loaded_rows': total_rows, 
             'n_cleaned_rows': total_cleaned,
-            'train_shape': f"{X_train.shape[0]} samples x {X_train.shape[1]} features",
-            'validation_shape': f"{X_val.shape[0]} samples x {X_val.shape[1]} features",
-            'test_shape': f"{X_test.shape[0]} samples x {X_test.shape[1]} features",
-            'split_pct': {'train': len(X_train)//total_rows, 'val': len(X_val)//total_rows, 'test': len(X_test)//total_rows},
-            'target_distribution': y_train.value_counts().to_dict() if 'classification' in method.lower() else None,
-            'memory_before_clean': "Used cashed memory" if mem_before==mem_after else f"{mem_before} MB",
-            'memory_after_clean': f"{mem_after} MB",
-            'memory_reduction': f"{round((mem_before - mem_after) / mem_before * 100, 2)}%" if mem_before==mem_after else "0%",
+            'full_dataset_shape': f"{X_full.shape[0]} samples x {X_full.shape[1]} features",
+            'target_distribution': pd.Series(y_full).value_counts().to_dict() if 'classification' in method.lower() else None,
+            'memory_before_clean': "Used cached memory" if mem_before==mem_after else f"{mem_before:.2f} MB",
+            'memory_after_clean': f"{mem_after:.2f} MB",
+            'memory_reduction': f"{round((mem_before - mem_after) / mem_before * 100, 2)}%" if mem_before!=mem_after else "0%",
         }
         step_info.update(col_log_data)
 
+    return X_full, y_full # type:ignore
+
+
+def split_processed_data(X: np.ndarray, y: np.ndarray, method: str, test_size: float = 0.2, val_size: float = 0.2, 
+                         seed: int = 42, ml_logger: MLLogger|None = None
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Split preprocessed data into train/val/test sets"""
+    if not ml_logger: ml_logger = MLLogger()
+    with ml_logger.log_step("Split Data") as step_info:
+        print(f"Splitting data (test={test_size}, val={val_size}).")
+        
+        stratify = y if method == "classification" else None
+        
+        # First split: separate test set
+        X_temp, X_test, y_temp, y_test = train_test_split(
+            X, y, test_size=test_size, random_state=seed, stratify=stratify
+        )
+        
+        # Second split: separate train and validation
+        stratify_temp = y_temp if method == "classification" else None
+        X_train, X_val, y_train, y_val = train_test_split(
+            X_temp, y_temp, test_size=val_size/(1-test_size), random_state=seed, stratify=stratify_temp
+        )
+        
+        step_info = {
+            'train_shape': f"{X_train.shape[0]} samples x {X_train.shape[1]} features",
+            'validation_shape': f"{X_val.shape[0]} samples x {X_val.shape[1]} features",
+            'test_shape': f"{X_test.shape[0]} samples x {X_test.shape[1]} features",
+            'split_pct': {
+                'train': f"{len(X_train)/len(X)*100:.1f}%",
+                'val': f"{len(X_val)/len(X)*100:.1f}%",
+                'test': f"{len(X_test)/len(X)*100:.1f}%"
+            },
+            'stratified': method == "classification",
+        }
+    
     return X_train, X_val, X_test, y_train, y_val, y_test
 
 
@@ -111,10 +145,10 @@ def wrap_into_loaders(method, X_train, X_val, X_test, y_train, y_val, y_test, ba
     return train_loader, val_loader, test_loader
 
 
-def transform_columns(dataset, X_train, X_val, X_test, y_train) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
-    # transform columns types (cardinality)
-    numeric_cols = X_train.select_dtypes(include=["float", "int"]).columns.tolist()
-    categorical_cols = X_train.select_dtypes(include=["category", "object"]).columns.tolist()
+def transform_full_dataset(dataset: str, X: pd.DataFrame, y: pd.Series) -> tuple[np.ndarray, dict]:
+    """Fits and transforms on the entire dataset."""
+    numeric_cols = X.select_dtypes(include=["float", "int"]).columns.tolist()
+    categorical_cols = X.select_dtypes(include=["category", "object"]).columns.tolist()
     high_card_cols = []
 
     if dataset == "hotels":
@@ -122,7 +156,7 @@ def transform_columns(dataset, X_train, X_val, X_test, y_train) -> tuple[pd.Data
         "country", 
         "agent", 
         "company"
-        ] if c in X_train.columns]
+        ] if c in X.columns]
     
     elif dataset == "accidents":
         high_card_cols = [c for c in [
@@ -133,7 +167,7 @@ def transform_columns(dataset, X_train, X_val, X_test, y_train) -> tuple[pd.Data
         "Airport_Code",
         # "Wind_Direction", # not enough variation
         # "Weather_Condition", # not enough variation
-        ] if c in X_train.columns]
+        ] if c in X.columns]
 
     # Build column transformer
     num_pipeline = Pipeline([
@@ -158,11 +192,9 @@ def transform_columns(dataset, X_train, X_val, X_test, y_train) -> tuple[pd.Data
     if high_card_cols:
         transformers.append(("freq", freq_pipeline, high_card_cols))
 
-    # build and fit preprocessor on X_train
+    # Fit and transform on full dataset
     preprocessor = ColumnTransformer(transformers, remainder="drop")
-    X_train = preprocessor.fit_transform(X_train, y_train)
-    X_val = preprocessor.transform(X_val)
-    X_test = preprocessor.transform(X_test)
+    X_transformed = preprocessor.fit_transform(X, y)
 
     log_data = {
         'numeric_features': len(numeric_cols),
@@ -170,7 +202,7 @@ def transform_columns(dataset, X_train, X_val, X_test, y_train) -> tuple[pd.Data
         'high_cardinality_features': len(high_card_cols) if high_card_cols else 0,
     }
     
-    return X_train, X_val, X_test, log_data # type: ignore
+    return X_transformed, log_data # type:ignore
 
 
 # clean either dataset
@@ -302,9 +334,12 @@ def subsample_dataset(df: pd.DataFrame, target: str, subsample_frac: float, seed
             # random sample for regression
             df = df.sample(frac=subsample_frac, random_state=seed).reset_index(drop=True)
         else:
-            df = df.groupby(target, group_keys=False).apply(
-                lambda x: x.sample(frac=subsample_frac, random_state=seed)
-            ).reset_index(drop=True)
+            # stratified sampling by target for classification
+            # Using sample on each group separately to avoid FutureWarning
+            sampled_groups = []
+            for _, group in df.groupby(target, group_keys=False):
+                sampled_groups.append(group.sample(frac=subsample_frac, random_state=seed))
+            df = pd.concat(sampled_groups, ignore_index=True)
     return df
 
 
