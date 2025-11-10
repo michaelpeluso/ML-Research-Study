@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 from typing import Callable, List, Tuple, Union
 
+from utils.logger import print_t as print
+
 def set_seed(seed=4242) -> int:
     # set random seed for reproducibility per report
     torch.manual_seed(seed)

@@ -3,6 +3,8 @@ from torch.optim import SGD, Adam, AdamW
 from torch.optim import Optimizer
 from typing import Any, Optional, Tuple
 
+from utils.logger import print_t as print
+
 
 # sgd with momentum
 class SGDMomentum(SGD):

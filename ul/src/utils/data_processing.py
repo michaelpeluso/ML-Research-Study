@@ -22,11 +22,12 @@ def load_or_process_data(dataset: str, target: str, method: str, subsample: floa
         if not cache_dir:
             cache_dir = os.path.join(os.environ['ROOT'], "cache")
         hotels_path = os.path.join(os.environ['ROOT'], f"data/hotel_bookings.csv")
-        accidents_path = os.path.join(os.environ['ROOT'], f"data/US_Accidents_March23_1M_rows.csv")
+        accidents_path = os.path.join(os.environ['ROOT'], f"data/US_Accidents_March23_2M_rows.csv")
 
         print(f"Loading {dataset} data.")
-        os.makedirs(cache_dir, exist_ok=True)
-        cache_file = os.path.join(cache_dir, f"{dataset}_subsample_{int(subsample*100)}_full.pkl")
+        data_cache_dir = os.path.join(cache_dir, 'data')
+        os.makedirs(data_cache_dir, exist_ok=True)
+        cache_file = os.path.join(data_cache_dir, f"{dataset}_subsample_{int(subsample*100)}.pkl")
         col_log_data = {}
 
         if os.path.exists(cache_file):
@@ -176,7 +177,7 @@ def transform_full_dataset(dataset: str, X: pd.DataFrame, y: pd.Series) -> tuple
     ])
     cat_pipeline = Pipeline([
         ("imputer", SimpleImputer(strategy="most_frequent")),
-        ("encoder", TargetEncoder()),
+        ("encoder", CountEncoder()),
         ("scaler", StandardScaler(with_mean=True, with_std=True))
     ])
     freq_pipeline = Pipeline([
@@ -194,12 +195,19 @@ def transform_full_dataset(dataset: str, X: pd.DataFrame, y: pd.Series) -> tuple
 
     # Fit and transform on full dataset
     preprocessor = ColumnTransformer(transformers, remainder="drop")
-    X_transformed = preprocessor.fit_transform(X, y)
+    X_transformed = preprocessor.fit_transform(X)  # No y parameter - label-free
 
     log_data = {
         'numeric_features': len(numeric_cols),
         'categorical_features': len(categorical_cols),
         'high_cardinality_features': len(high_card_cols) if high_card_cols else 0,
+        'encoding_strategy': {
+            'numeric': 'median imputation + standard scaling',
+            'low_med_cardinality': 'frequency encoding (CountEncoder) - LABEL-FREE',
+            'high_cardinality': 'frequency encoding (CountEncoder) - LABEL-FREE',
+            'target_encoding_used': False, 
+        },
+        'ul_compliance': 'LABEL-FREE for Steps 1-3 (clustering, DR)',
     }
     
     return X_transformed, log_data # type:ignore

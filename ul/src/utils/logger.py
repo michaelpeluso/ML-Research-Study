@@ -209,10 +209,11 @@ class MLLogger:
             f.write(f"Log File: {self.log_file}\n")
             f.write("=" * 70 + "\n")
 
-        print(f"Detailed report saved to: {output_file}")
+        print_t(f"Detailed report saved to: {output_file}")
 
 
 # print overload to add time since program start and since last print
 _program_start_time = time.perf_counter()
 def print_t(*args):
-    print(f"{time.perf_counter() - _program_start_time:.2f}s | ", *args)
+    time_str = f"{time.perf_counter() - _program_start_time:.2f}s"
+    print(f"{time_str:<10}| ", *args)

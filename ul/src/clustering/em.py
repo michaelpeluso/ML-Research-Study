@@ -1,7 +1,7 @@
 import os
 import time
 import numpy as np
-from typing import Literal
+from typing import Literal, Any
 
 from sklearn.mixture import GaussianMixture
 from utils.plotter import plot_curve, plot_multiple_y_axes
@@ -14,23 +14,28 @@ class EMClustering(BaseClustering):
     
     # Configuration - override base class attributes
     param_name = 'n_components'
-    dir_prefix = 'n'
-    cluster_label = 'Component'
-    cluster_color = 'green'
     algorithm_name = 'GMM'
     centers_attr = 'means_'
     
-    def fit_model(self, X, n_clusters, seed=None, n_init=10, covariance_type: Literal['full', 'tied', 'diag', 'spherical']='full', tol=1e-3, max_iter=100, **kwargs):
+    def __init__(self, dataset: str, save_path: str, ml_logger, silhouette_subsample: int = 10000, seed: int = 42, 
+                 covariance_type: Literal['full', 'tied', 'diag', 'spherical'] = 'full', tol: float = 1e-3, max_iter: int = 100):
+        """Initialize EM clustering with algorithm-specific parameters."""
+        super().__init__(dataset, save_path, ml_logger, silhouette_subsample, seed)
+        self.covariance_type: Literal['full', 'tied', 'diag', 'spherical'] = covariance_type
+        self.tol = tol
+        self.max_iter = max_iter
+    
+    def fit_model(self, X, n_clusters, seed, n_init) -> Any:
         """Fit GaussianMixture and return the fitted model."""
-        print(f"Fitting GMM model")
+        print(f"Fitting GMM model with n_components={n_clusters}, covariance_type={self.covariance_type}, n_init={n_init}, tol={self.tol}, max_iter={self.max_iter}")
         gmm = GaussianMixture(
             n_components=n_clusters, 
-            covariance_type=covariance_type,
+            covariance_type=self.covariance_type,
             random_state=seed if seed is not None else self.seed, 
             n_init=n_init,
-            tol=tol,
-            max_iter=max_iter,
-            verbose=1
+            tol=self.tol,
+            max_iter=self.max_iter,
+            verbose=0
         )
         gmm.fit(X)
         return gmm
@@ -85,20 +90,8 @@ class EMClustering(BaseClustering):
             labels=[data[1] for data in metric_data[:4]],
             xlabel="Number of Components",
             title=f"GMM: Shared Metrics on {self.dataset}",
-            save_path=os.path.join(self.save_path, "shared_metrics_multi_axis.png"),
+            save_path=os.path.join(self.save_path, "all_metrics.png"),
             colors=[data[2] for data in metric_data[:4]],
             vline_x=chosen_n,
             vline_label=f"Optimal n={chosen_n}" if chosen_n else None
         )
-        
-
-    def run_gmm(self, 
-                X_train, 
-                mixture_components: int | tuple = (2, 10), 
-                stability_runs=10,
-                n_init: int = 10, 
-                covariance_type: Literal['full', 'tied', 'diag', 'spherical'] = 'full',
-                n_jobs:int=1
-                ):
-        """Run GMM clustering with weighted sum selection."""
-        return self.run(X_train, mixture_components, stability_runs, n_init=n_init, covariance_type=covariance_type, n_jobs=n_jobs)

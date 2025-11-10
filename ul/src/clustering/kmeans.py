@@ -13,15 +13,12 @@ class KMeansClustering(BaseClustering):
     
     # Configuration - override base class attributes
     param_name = 'k'
-    dir_prefix = 'k'
-    cluster_label = 'Cluster'
-    cluster_color = 'orange'
     algorithm_name = 'K-Means'
     centers_attr = 'cluster_centers_'
     
-    def fit_model(self, X, n_clusters, seed=None, n_init=10, **kwargs):
+    def fit_model(self, X, n_clusters, seed=None, n_init=10):
         """Fit KMeans and return the fitted model."""
-        print(f"Fitting KMeans model")
+        print(f"Fitting KMeans model with n_clusters={n_clusters}, n_init={n_init}, seed={seed or self.seed}")
         kmeans = KMeans(n_clusters=n_clusters, random_state=seed or self.seed, n_init=n_init)
         kmeans.fit(X)
         return kmeans
@@ -71,7 +68,7 @@ class KMeansClustering(BaseClustering):
             labels=[data[1] for data in metric_data[:4]],
             xlabel="Number of Clusters k",
             title=f"K-Means: Shared Metrics on {self.dataset}",
-            save_path=os.path.join(self.save_path, "shared_metrics_multi_axis.png"),
+            save_path=os.path.join(self.save_path, "all_metrics.png"),
             colors=[data[2] for data in metric_data[:4]],
             vline_x=chosen_n,
             vline_label=f"Optimal k={chosen_n}" if chosen_n else None

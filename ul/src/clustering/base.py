@@ -1,5 +1,4 @@
 import os
-import shutil
 import time
 import numpy as np
 from abc import ABC, abstractmethod
@@ -7,32 +6,32 @@ from typing import Any
 from sklearn.metrics import adjusted_rand_score, silhouette_samples, silhouette_score, calinski_harabasz_score, davies_bouldin_score
 from joblib import Parallel, delayed
 
-from utils.plotter import plot_silhouette
 from utils.logger import MLLogger, print_t as print
 from utils.data_processing import sample_fit_labels
+from utils.plotter import plot_silhouette
+from utils.cache_manager import CacheManager
 
 
 class BaseClustering(ABC):
     """Abstract base class for clustering algorithms."""
     
-    # Configuration - subclasses should override these class attributes
+    # overridden by subclasses
     param_name = 'n_clusters'       # 'k' or 'n_components'
-    dir_prefix = 'n'                # 'k' or 'n'
-    cluster_label = 'Cluster'       # 'Cluster' or 'Component'
-    cluster_color = 'blue'          # Color for plots
     algorithm_name = 'Clustering'   # Algorithm name for titles
     centers_attr = 'cluster_centers_'  # Attribute name for cluster centers
     
-    def __init__(self, dataset: str, save_path: str, ml_logger: MLLogger, plot_subsample_size: int = 10000, seed: int = 42):
+    def __init__(self, dataset: str, save_path: str, ml_logger: MLLogger, silhouette_subsample: int = 10000, seed: int = 42):
         self.dataset = dataset
-        self.save_path = save_path
+        self.save_path = os.path.join(save_path, self.algorithm_name.lower().replace(' ', '_').replace('-', ''))
         self.ml_logger = ml_logger
-        self.plot_subsample_size = plot_subsample_size
+        self.silhouette_subsample = silhouette_subsample
         self.seed = seed
+        
+        self.cache_manager = CacheManager()  # Use centralized cache manager
         os.makedirs(self.save_path, exist_ok=True)
     
     @abstractmethod
-    def fit_model(self, X, n_clusters, **kwargs) -> Any:
+    def fit_model(self, X, n_clusters, seed, n_init) -> Any:
         """Fit and return the clustering model. Must be implemented by subclasses."""
         pass
     
@@ -51,10 +50,10 @@ class BaseClustering(ABC):
         """Get algorithm-specific metrics (e.g., inertia for KMeans, BIC/AIC for GMM). """
         return {}
     
-    def measure_clustering(self, X_train, n_clusters, **kwargs):
+    def measure_clustering(self, X_train, n_clusters, n_init):
         """Measure clustering quality for a specific number of clusters."""
         print(f"Measuring {self.algorithm_name} ({self.param_name}={n_clusters})")
-        with self.ml_logger.log_step(f"{self.algorithm_name} Hyperparameter Selection ({self.param_name}={n_clusters})") as step_info:  
+        with self.ml_logger.log_step(f"{self.algorithm_name} Hyperparameter Selection ({self.param_name}={n_clusters})") as step_info:   # type: ignore
             start_time = time.perf_counter()
             
             # Run clustering multiple times with different seeds
@@ -62,7 +61,7 @@ class BaseClustering(ABC):
             models = []
                         
             # Fit model and extract results
-            model = self.fit_model(X_train, n_clusters=n_clusters, seed=self.seed, **kwargs)
+            model = self.fit_model(X_train, n_clusters=n_clusters, seed=self.seed, n_init=n_init)
             labels, centers = self.extract_results(model, X_train)
             models.append((model, labels, centers))
             
@@ -72,7 +71,7 @@ class BaseClustering(ABC):
             dbi_score = -1
             
             if n_clusters > 1:
-                Xs, ys, sample_idx = sample_fit_labels(X_train, labels, sample_size=self.plot_subsample_size, seed=self.seed)
+                Xs, ys, sample_idx = sample_fit_labels(X_train, labels, sample_size=self.silhouette_subsample, seed=self.seed)
                 sil_score, _ = self.compute_silhouette(Xs, ys)
                 chi_score = float(calinski_harabasz_score(X_train, labels))
                 dbi_score = float(davies_bouldin_score(X_train, labels))
@@ -110,7 +109,7 @@ class BaseClustering(ABC):
             sample_idx = None
             
             if n_clusters > 1:
-                Xs, ys, sample_idx = sample_fit_labels(X_train, labels, sample_size=self.plot_subsample_size, seed=self.seed)
+                Xs, ys, sample_idx = sample_fit_labels(X_train, labels, sample_size=self.silhouette_subsample, seed=self.seed)
                 _, sample_sil_vals = self.compute_silhouette(Xs, ys)
 
             # Generate plots
@@ -146,25 +145,26 @@ class BaseClustering(ABC):
     
     def generate_plots(self, X_train, labels, n_clusters, sil_score, sample_sil_vals=None, sample_idx=None, centers=None):
         """Generate silhouette and cluster size plots for a specific number of clusters."""
-        cluster_dir = os.path.join(self.save_path, "clusters", f"{self.dir_prefix}{n_clusters}")
+        dir_prefix = self.param_name[0]
+        cluster_dir = os.path.join(self.save_path, "clusters")
         os.makedirs(cluster_dir, exist_ok=True)
 
         # Silhouette plot
-        sil_path = os.path.join(cluster_dir, "silhouette.png")
+        sil_path = os.path.join(cluster_dir, f"{dir_prefix}{n_clusters}_silhouette.png")
         if sample_sil_vals is None and n_clusters > 1:
-            Xs, ys, sample_idx = sample_fit_labels(X_train, labels, sample_size=self.plot_subsample_size, seed=self.seed)
+            Xs, ys, sample_idx = sample_fit_labels(X_train, labels, sample_size=self.silhouette_subsample, seed=self.seed)
             sil_score, sample_sil_vals = self.compute_silhouette(Xs, ys)
 
         if sample_sil_vals is not None:
-            print(f"Generating silhouette plot for {self.dir_prefix}={n_clusters}")
+            print(f"Generating silhouette plot for {dir_prefix}={n_clusters}")
             plot_silhouette(X_train, labels,
-                           title=f"Silhouette Plot ({self.dir_prefix}={n_clusters}) - Score: {sil_score:.3f}",
+                           title=f"Silhouette Plot ({dir_prefix}={n_clusters}) - Score: {sil_score:.3f}",
                            save_path=sil_path,
                            silhouette_avg=sil_score,
                            sample_silhouette_values=sample_sil_vals,
                            sample_indices=sample_idx)
         else:
-            print(f"No silhouette values for {self.dir_prefix}={n_clusters}; skipping silhouette plot.")
+            print(f"No silhouette values for {dir_prefix}={n_clusters}; skipping silhouette plot.")
 
     def compute_silhouette(self, X: np.ndarray, labels: np.ndarray):
         """ Compute silhouette average and per-sample silhouette values for provided X and labels. Measures cohesion and separation for each point. """
@@ -204,18 +204,19 @@ class BaseClustering(ABC):
         return min_inter / max_intra if max_intra > 0 else -1
 
     
-    def stability_analysis(self, X_train, chosen_n, stability_runs, **kwargs):
+    def stability_analysis(self, X_train, chosen_n, stability_runs, n_init):
         """Run stability analysis by clustering multiple times and computing pairwise ARI."""
         print(f"Running stability analysis with {stability_runs} runs for {self.param_name}={chosen_n}")
         
         with self.ml_logger.log_step(f"{self.algorithm_name} Stability Analysis ({self.param_name}={chosen_n}, runs={stability_runs})") as step_info:
             # Fit multiple times with different seeds
             labels_list = []
+            random_seeds = np.random.RandomState(self.seed).randint(0, 2**31 - 1, size=stability_runs)
+            
             for i in range(stability_runs):
-                print(f"Stability run {i + 1}/{stability_runs} for {self.param_name}={chosen_n}")
-                # Use more diverse seeds for better stability testing
-                seed_i = self.seed + (i * 1000)
-                model = self.fit_model(X_train, n_clusters=chosen_n, seed=seed_i, **kwargs)
+                print(f"Stability run {i + 1}/{stability_runs} for {self.param_name}={chosen_n} with seed {random_seeds[i]}")
+                seed_i = int(random_seeds[i])
+                model = self.fit_model(X_train, n_clusters=chosen_n, seed=seed_i, n_init=n_init)
                 labels_i, centers = self.extract_results(model, X_train)
                 labels_list.append(labels_i)
 
@@ -257,16 +258,24 @@ class BaseClustering(ABC):
             
             step_info.update(results)
     
-    def run(self, X_train, n_clusters: int | tuple = (2, 10), stability_runs=10, n_jobs: int = 1, **kwargs):
+    
+    def run(self, X_train, n_clusters: int | tuple = (2, 10), stability_runs=10, n_jobs: int = 1, n_init=10):
         """Generic clustering runner that works for all algorithms."""
+        # Check cache
+        params = {'seed': self.seed, 'n_clusters': n_clusters, 'stability_runs': stability_runs,
+                'n_init': n_init, 'silhouette_subsample': self.silhouette_subsample, 'data_shape': X_train.shape}
+        cached_result = self.cache_manager.load(self.dataset, f'{self.algorithm_name.lower()}_clustering', params)
+        if cached_result is not None: return cached_result
+        
+        # Main
         start_log_index = len(self.ml_logger.current_logs)
         with self.ml_logger.log_step(f"{self.algorithm_name} Clustering ({self.param_name}={n_clusters})") as step_info:
             function_start = time.perf_counter()
 
             if isinstance(n_clusters, int):
                 chosen_n = n_clusters
-                model, selection_results = self.measure_clustering(X_train, chosen_n, stability_runs=1, **kwargs)
-                step_info.update(selection_results)
+                model, selection_results = self.measure_clustering(X_train, chosen_n, n_init=n_init)
+                best_result = selection_results
                 
             elif isinstance(n_clusters, tuple) and len(n_clusters) == 2:
                 print(f"Evaluating {self.param_name} values from {n_clusters[0]} to {n_clusters[1]} (parallel jobs={n_jobs})")
@@ -274,8 +283,8 @@ class BaseClustering(ABC):
                 n_values = list(range(n_clusters[0], n_clusters[1] + 1))
                 
                 # Parallel execution - single run per k (n_init handles stability)
-                results_with_models = Parallel(n_jobs=n_jobs, backend='loky', verbose=10)(
-                    delayed(self.measure_clustering)(X_train, n_val, stability_runs=1, **kwargs)
+                results_with_models = Parallel(n_jobs=n_jobs, backend='loky', verbose=0)(
+                    delayed(self.measure_clustering)(X_train, n_val, n_init=n_init)
                     for n_val in n_values
                 )
                 
@@ -298,36 +307,69 @@ class BaseClustering(ABC):
                     if key not in [self.param_name, 'cluster_centers', 'silhouette_score', 'dunn_index', 'time', 'composite_score']:
                         metrics_str += f", {key}={val:.3f}"
                 print(f"Selected {self.param_name}={chosen_n} with {metrics_str}, composite={best_result['composite_score']:.3f}")
-                
-                step_info.update({
-                    "total_time": sum(r["time"] for r in selection_results),
-                    f"{self.param_name}_range": n_clusters,
-                    f"{self.param_name}_values_tested": n_values,
-                    "stability_runs": stability_runs,
-                    "seed": self.seed,
-                    "total_samples": len(X_train),
-                    "total_features": X_train.shape[1],
-                    "total_evaluations": len(n_values),
-                    f"chosen_{self.param_name}": chosen_n,
-                    **{f"chosen_{self.param_name}_{k}": v for k, v in best_result.items() if k != self.param_name},
-                    "selection_results": selection_results,
-                })
 
                 model = models[chosen_n]
             else: 
                 raise ValueError(f"{self.param_name} must be either an int or a tuple of (start, end)")
 
-            self.stability_analysis(X_train, chosen_n, stability_runs, **kwargs)
-            model = self.fit_model(X_train, chosen_n, **kwargs)
+            self.stability_analysis(X_train, chosen_n, stability_runs, n_init=n_init)
+            
+            model = self.fit_model(X_train, chosen_n, seed=self.seed, n_init=n_init)
             labels, centers = self.extract_results(model, X_train)
-            self.generate_evaluation_plots(X_train, labels, chosen_n, centers=centers)
+            # self.generate_silhouette_plot(X_train, labels, chosen_n, centers=centers)
 
             function_elapsed = time.perf_counter() - function_start
             self.ml_logger.log_metric('total_duration', function_elapsed)
             print(f"Total execution time: {function_elapsed:.2f}s")
+            
+            log_data = {
+                'n_samples': X_train.shape[0],
+                'n_features': X_train.shape[1],
+                f'{self.param_name}_input': n_clusters,
+                'stability_runs': stability_runs,
+                'n_jobs': n_jobs,
+                'algorithm': self.algorithm_name,
+                'seed': self.seed,
+                'silhouette_subsample': self.silhouette_subsample,
+                'total_duration': function_elapsed,
+                f'chosen_{self.param_name}': chosen_n,
+                'n_init': n_init
+            }
+            
+            # Add range-specific data if tuple
+            if isinstance(n_clusters, tuple) and len(n_clusters) == 2:
+                log_data.update({
+                    "total_time": sum(r["time"] for r in selection_results),
+                    f"{self.param_name}_range": n_clusters,
+                    f"{self.param_name}_values_tested": list(range(n_clusters[0], n_clusters[1] + 1)),
+                    "total_evaluations": n_clusters[1] - n_clusters[0] + 1,
+                    **{f"chosen_{self.param_name}_{k}": v for k, v in best_result.items() if k != self.param_name},
+                    "selection_results": selection_results,
+                })
+            elif isinstance(n_clusters, int):
+                # For single int, add the selection_results metrics
+                log_data.update(selection_results)
+            
+            step_info.update(log_data)
 
         self.ml_logger.generate_log_report(output_file=f"{self.save_path}/execution_report.txt", start_index=start_log_index)
-        return model
+        
+        # Return comprehensive results for step 3
+        labels, centers = self.extract_results(model, X_train)
+        result = {
+            'model': model,
+            'labels': labels,
+            'centers': centers,
+            'chosen_n': chosen_n,
+            'best_result': best_result,
+            'selection_results': selection_results if isinstance(n_clusters, tuple) else None
+        }
+        
+        params = {'seed': self.seed, 'n_clusters': n_clusters, 'stability_runs': stability_runs,
+                'n_init': n_init, 'silhouette_subsample': self.silhouette_subsample, 'data_shape': X_train.shape}
+        self.cache_manager.save(self.dataset, f'{self.algorithm_name.lower()}_clustering', result, params)
+        
+        return result
     
     def _compute_composite_scores(self, selection_results):
         """Compute composite scores using Rank Aggregation (HALVING principle).
@@ -382,26 +424,21 @@ class BaseClustering(ABC):
         return chosen_k
 
     
-    def generate_evaluation_plots(self, X_train, labels, chosen_n, centers=None):
-        """Copy or generate final evaluation plots (silhouette and scatter) for the chosen cluster number."""
-        print(f"Generating evaluation plots for {self.dir_prefix}={chosen_n}...")
+    def generate_silhouette_plot(self, X_train, labels, chosen_n, centers=None):
+        """Copy or generate final evaluation plots for the chosen cluster number."""
+        dir_prefix = self.param_name[0]
+        print(f"Generating evaluation plots for {dir_prefix}={chosen_n}...")
+        os.makedirs(os.path.dirname(os.path.join(self.save_path, "silhouettes")), exist_ok=True)
+
         
-        cluster_dir = os.path.join(self.save_path, "clusters", f"{self.dir_prefix}{chosen_n}")
-        
-        # Silhouette plot
-        sil_src = os.path.join(cluster_dir, "silhouette.png")
-        sil_dst = os.path.join(self.save_path, "silhouette.png")
-        if os.path.exists(sil_src):
-            shutil.copy(sil_src, sil_dst)
+        Xs, ys, sample_idx = sample_fit_labels(X_train, labels, self.silhouette_subsample, self.seed)
+        sil_score, sample_sil_vals = self.compute_silhouette(Xs, ys)
+        if sample_sil_vals is not None:
+            plot_silhouette(X_train, labels,
+                            title=f"Silhouette Plot for {self.algorithm_name} ({dir_prefix}={chosen_n}) on {self.dataset}",
+                            save_path=os.path.join(self.save_path, "silhouettes", f"{dir_prefix}{chosen_n}_silhouette.png"),
+                            silhouette_avg=sil_score,
+                            sample_silhouette_values=sample_sil_vals,
+                            sample_indices=sample_idx)
         else:
-            Xs, ys, sample_idx = sample_fit_labels(X_train, labels, self.plot_subsample_size, self.seed)
-            sil_score, sample_sil_vals = self.compute_silhouette(Xs, ys)
-            if sample_sil_vals is not None:
-                plot_silhouette(X_train, labels,
-                              title=f"Silhouette Plot for {self.algorithm_name} ({self.dir_prefix}={chosen_n}) on {self.dataset}",
-                              save_path=sil_dst,
-                              silhouette_avg=sil_score,
-                              sample_silhouette_values=sample_sil_vals,
-                              sample_indices=sample_idx)
-            else:
-                print(f"Skipping silhouette plot for evaluation: silhouette undefined for {self.dir_prefix}={chosen_n}")
+            print(f"Skipping silhouette plot for evaluation: silhouette undefined for {dir_prefix}={chosen_n}")
