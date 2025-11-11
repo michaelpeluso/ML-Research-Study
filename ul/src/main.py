@@ -266,14 +266,14 @@ def main():
             'dataset': 'hotels',
             'target': 'is_canceled',
             'method': 'classification',
-            'subsample': 0.001,
+            'subsample': 1.0,
             'covariance_type': 'full'
         },
         {
             'dataset': 'accidents',
             'target': 'Duration_Seconds',
             'method': 'regression',
-            'subsample': 0.0001,
+            'subsample': 0.6,
             'covariance_type': 'diag'
         }
     ]
