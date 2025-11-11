@@ -61,9 +61,11 @@ class BaseDR(ABC):
         """Evaluate dimensionality reduction label-free"""
         print(f"Evaluating {self.algorithm_name} on {self.dataset} for components in {n_components_range}")
         
-        # Convert tuple to list if needed
+        # Normalize n_components_range to list
         if isinstance(n_components_range, tuple) and len(n_components_range) == 2:
             n_components_range = list(range(n_components_range[0], n_components_range[1]))
+        elif not isinstance(n_components_range, list):
+            n_components_range = list(n_components_range)
         
         # Validate n_components range
         max_components = min(X_train.shape[0], X_train.shape[1])
@@ -71,9 +73,9 @@ class BaseDR(ABC):
         
         if not valid_range:
             print(f"Warning: No valid components in range. Max possible: {max_components}")
-            valid_range = [min(n_components_range[0] if isinstance(n_components_range, tuple) else n_components_range[0], max_components)]
+            valid_range = [min(n_components_range[0], max_components)]
         
-        if len(valid_range) < len(list(n_components_range)):
+        if len(valid_range) < len(n_components_range):
             print(f"Note: Limiting components to max={max_components} (was {max(n_components_range)})")
         
         results = []
@@ -172,7 +174,7 @@ class BaseDR(ABC):
             step_info.update({
                 'n_samples': X_train.shape[0],
                 'n_features': X_train.shape[1],
-                'n_components_range': n_components_range if isinstance(n_components_range, tuple) else (n_components_range, n_components_range),
+                'n_components_range': tuple(n_components_range) if isinstance(n_components_range, list) else n_components_range if isinstance(n_components_range, tuple) else (n_components_range, n_components_range),
                 'task': task,
                 'algorithm': self.algorithm_name,
                 'seed': self.seed,
@@ -192,7 +194,8 @@ class BaseDR(ABC):
             'n_components': best_result['n_components'],
             'X_transformed': best_result['X_transformed'],
             'results': results,
-            'best_result': best_result
+            'best_result': best_result,
+            'total_time': elapsed
         }
         
         params = {'seed': self.seed, 'n_components_range': n_components_range, 'task': task, 'data_shape': X_train.shape}
@@ -248,7 +251,7 @@ class BaseDR(ABC):
         print(f"Stitched {len(png_files)} PNG images into {output_path}")
 
 
-    def generate_dr_comparison_table(self, save_path):
+    def generate_dr_comparison_table(self, dr_results, save_path):
         """Generate a comparison table across all DR methods."""
         import pandas as pd
         
@@ -256,24 +259,15 @@ class BaseDR(ABC):
         table_data = []
         
         for method in methods:
-            report_path = os.path.join(save_path, f"dr/{method}/execution_report.txt")
-            if not os.path.exists(report_path):
+            if method not in dr_results:
                 continue
             
-            # Parse execution report for key metrics
-            with open(report_path, 'r') as f:
-                content = f.read()
-                
-            # Extract key metrics
-            best_n = re.search(r'Best N Components: (\d+)', content)
-            best_score = re.search(r'Best Score: ([\d.]+)', content)
-            total_time = re.search(r'Total Time: ([\d.]+)', content)
-            
+            result = dr_results[method]
             row = {
                 'Method': method.upper(),
-                'Best_n_components': int(best_n.group(1)) if best_n else 'N/A',
-                'Best_Score': float(best_score.group(1)) if best_score else 'N/A',
-                'Time_seconds': float(total_time.group(1)) if total_time else 'N/A'
+                'Best_n_components': result['n_components'],
+                'Best_Score': result['best_result']['mean_score'],
+                'Time_seconds': result['total_time']
             }
             table_data.append(row)
         
@@ -281,8 +275,9 @@ class BaseDR(ABC):
             df = pd.DataFrame(table_data)
             table_path = os.path.join(save_path, "dr_comparison_table.csv")
             df.to_csv(table_path, index=False)
-            print(f"\nDR Comparison Table:\n{df.to_string(index=False)}")
+            print(f"DR Comparison Table:\n{df.to_string(index=False)}")
             print(f"Saved to {table_path}\n")
             return df
-        
-        return None
+        else: 
+            print(f"DR Comparison Table: No DR results found.\n")
+            return None

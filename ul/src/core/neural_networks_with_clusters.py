@@ -6,6 +6,7 @@ import torch.nn as nn
 from typing import Dict, List, Tuple, Any, Optional
 from sklearn.metrics.pairwise import euclidean_distances
 
+from utils.cache_manager import CacheManager
 from utils.data_processing import split_processed_data, wrap_into_loaders
 from utils.logger import MLLogger
 from nerual_networks.models import set_seed, MLP
@@ -63,10 +64,34 @@ def run_neural_networks_with_clusters(
     tune_if_needed: bool = True  # Allow tuning for cluster features
 ) -> Dict[str, Any]:
     """Train neural networks using cluster-derived features."""
-    
     start_time = time.perf_counter()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    cache_manager = CacheManager()
     results = {}
+
+    # Cache parameters
+    cache_params = {
+        'feature_setup': feature_setup,
+        'batch_size': batch_size,
+        'max_updates': max_updates,
+        'learning_rate': learning_rate,
+        'weight_decay': weight_decay,
+        'hidden_layers': tuple(hidden_layers),
+        'activation': activation,
+        'tune_if_needed': tune_if_needed,
+        'seed': seed,
+        'data_shape': X_original.shape,
+        'n_clusters': {
+            'kmeans': len(np.unique(clustering_results['kmeans']['labels'])),
+            'em': len(np.unique(clustering_results['em']['labels']))
+        }
+    }
+    cached_result = cache_manager.load(dataset, 'neural_networks_with_clusters', cache_params)
+    if cached_result is not None:
+        print(f"Loaded cached results for {dataset} neural networks with cluster features")
+        return cached_result
+    else:
+        print(f"No cached results found for {dataset} neural networks with cluster features, training from scratch")
     
     # Get clustering results
     kmeans_results = clustering_results['kmeans']
@@ -94,8 +119,6 @@ def run_neural_networks_with_clusters(
     print(f"Feature Setup: {feature_setup.upper()}")
     print(f"K-Means: {len(np.unique(kmeans_labels))} clusters")
     print(f"EM/GMM: {len(np.unique(em_labels))} clusters")
-    if em_responsibilities is not None:
-        print(f"EM/GMM soft assignments (responsibilities) available")
     print(f"{'='*80}\n")
     
     # Create baseline comparison (original features only)
@@ -134,7 +157,7 @@ def run_neural_networks_with_clusters(
     
     # Tune if needed (based on convergence)
     if tune_if_needed and results['kmeans']['final_train_loss'] > results['baseline']['final_train_loss'] * 1.5:
-        print("\nK-Means features showing poor convergence. Tuning learning rate...")
+        print("K-Means features showing poor convergence. Tuning learning rate...")
         kmeans_lr = learning_rate * 0.5  # Reduce learning rate
         kmeans_max_updates = int(max_updates * 1.5)  # Allow more iterations
         print(f"Adjusted: lr={kmeans_lr}, max_updates={kmeans_max_updates}")
@@ -175,7 +198,7 @@ def run_neural_networks_with_clusters(
     
     # Tune if needed
     if tune_if_needed and results['em']['final_train_loss'] > results['baseline']['final_train_loss'] * 1.5:
-        print("\n EM/GMM features showing poor convergence. Tuning learning rate...")
+        print("EM/GMM features showing poor convergence. Tuning learning rate...")
         em_lr = learning_rate * 0.5
         em_max_updates = int(max_updates * 1.5)
         print(f"Adjusted: lr={em_lr}, max_updates={em_max_updates}")
@@ -227,6 +250,10 @@ def run_neural_networks_with_clusters(
         step_info['kmeans_improvement_pct'] = kmeans_improvement
         step_info['em_improvement_pct'] = em_improvement
     
+    # Save to cache
+    cache_manager.save(dataset, 'neural_networks_with_clusters', cache_params, results)
+    print(f"Cached neural networks with clusters results")
+
     return results
 
 

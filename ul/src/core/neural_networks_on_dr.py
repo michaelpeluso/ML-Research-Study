@@ -37,7 +37,7 @@ def log_training_curves(
 
 def print_result_summary(method_name, test_loss, train_loss, wall_time, n_components=None):
     comp_str = f" (n={n_components})" if n_components is not None else ""
-    print(f"\n{method_name}{comp_str} - Test Loss: {test_loss:.4f}, "
+    print(f"{method_name}{comp_str} - Test Loss: {test_loss:.4f}, "
           f"Train Loss: {train_loss:.4f}, "
           f"Wall Time: {wall_time:.2f}s")
 
@@ -50,48 +50,66 @@ def _log_step_results(
     dataset: str
 ) -> None:
     """Helper function to log comprehensive step results."""
-    orig_result = results['original']
-    baseline_test_loss = orig_result['test_loss']
+    # Check if this is Step 4a (original only) or Step 4b (with DR methods)
+    has_original = 'original' in results
+    has_dr = any(method in results for method in ['pca', 'ica', 'rp'])
     
     with ml_logger.log_step(f"{step_name} ({dataset})") as step_info:
         step_info['hyperparameters'] = hyperparameters
         
-        # Log baseline performance
-        step_info['baseline'] = {
-            'test_loss': orig_result['test_loss'],
-            'train_loss': orig_result['final_train_loss'],
-            'wall_time': orig_result['wall_time'],
-            'n_params': orig_result['n_params'],
-            'n_trainable': orig_result['n_trainable']
-        }
+        # Log original/baseline performance if present
+        orig_result = None
+        baseline_test_loss = None
         
-        # Log DR method results and improvements
-        step_info['dr_results'] = {}
-        dr_methods = ['pca', 'ica', 'rp']
-        for dr_method in dr_methods:
-            if dr_method in results:
-                dr_result = results[dr_method]
-                test_loss_change_pct = ((dr_result['test_loss'] - baseline_test_loss) / baseline_test_loss) * 100
-                train_loss_change_pct = ((dr_result['final_train_loss'] - orig_result['final_train_loss']) / orig_result['final_train_loss']) * 100
+        if has_original:
+            orig_result = results['original']
+            baseline_test_loss = orig_result['test_loss']
+            
+            step_info['baseline'] = {
+                'test_loss': orig_result['test_loss'],
+                'train_loss': orig_result['final_train_loss'],
+                'wall_time': orig_result['wall_time'],
+                'n_params': orig_result['n_params'],
+                'n_trainable': orig_result['n_trainable']
+            }
+        
+        # Log DR method results and improvements (only if DR methods exist)
+        if has_dr:
+            step_info['dr_results'] = {}
+            dr_methods_present = []
+            
+            for dr_method in ['pca', 'ica', 'rp']:
+                if dr_method in results:
+                    dr_methods_present.append(dr_method)
+                    dr_result = results[dr_method]
+                    
+                    result_entry = {
+                        'test_loss': dr_result['test_loss'],
+                        'train_loss': dr_result['final_train_loss'],
+                        'wall_time': dr_result['wall_time'],
+                        'n_components': dr_result['n_components'],
+                        'n_params': dr_result['n_params']
+                    }
+                    
+                    # Add comparison to baseline if we have it
+                    if baseline_test_loss is not None and orig_result is not None:
+                        test_loss_change_pct = ((dr_result['test_loss'] - baseline_test_loss) / baseline_test_loss) * 100
+                        train_loss_change_pct = ((dr_result['final_train_loss'] - orig_result['final_train_loss']) / orig_result['final_train_loss']) * 100
+                        result_entry['test_loss_change_pct'] = test_loss_change_pct
+                        result_entry['train_loss_change_pct'] = train_loss_change_pct
+                        result_entry['improvement'] = test_loss_change_pct < 0
+                    
+                    step_info['dr_results'][dr_method] = result_entry
+            
+            # Find best DR method among those present
+            if dr_methods_present:
+                best_dr_method = min(dr_methods_present, key=lambda m: results[m]['test_loss'])
+                best_dr_result = results[best_dr_method]
+                step_info['best_dr_method'] = best_dr_method
+                step_info['best_dr_test_loss'] = best_dr_result['test_loss']
                 
-                step_info['dr_results'][dr_method] = {
-                    'test_loss': dr_result['test_loss'],
-                    'train_loss': dr_result['final_train_loss'],
-                    'wall_time': dr_result['wall_time'],
-                    'n_components': dr_result['n_components'],
-                    'n_params': dr_result['n_params'],
-                    'test_loss_change_pct': test_loss_change_pct,
-                    'train_loss_change_pct': train_loss_change_pct,
-                    'improvement': test_loss_change_pct < 0
-                }
-        
-        # Find best DR method
-        if dr_methods:
-            best_dr_method = min(dr_methods, key=lambda m: results[m]['test_loss'])
-            best_dr_result = results[best_dr_method]
-            step_info['best_dr_method'] = best_dr_method
-            step_info['best_dr_test_loss'] = best_dr_result['test_loss']
-            step_info['best_dr_improvement_pct'] = ((best_dr_result['test_loss'] - baseline_test_loss) / baseline_test_loss) * 100
+                if baseline_test_loss is not None:
+                    step_info['best_dr_improvement_pct'] = ((best_dr_result['test_loss'] - baseline_test_loss) / baseline_test_loss) * 100
         
         step_info['results'] = results
 
@@ -107,14 +125,20 @@ def _print_performance_comparison(
     print(f"{'Method':<15} {'Test Loss':<12} {'Train Loss':<12} {'Wall Time':<12} {'N Components':<15}")
     print("-" * 80)
 
-    # Original data
-    orig_result = results['original']
-    print(f"{'Original':<15} {orig_result['test_loss']:<12.4f} "
-          f"{orig_result['final_train_loss']:<12.4f} "
-          f"{orig_result['wall_time']:<12.2f} {'N/A':<15}")
+    # Original data (if available)
+    has_original = 'original' in results
+    orig_result = None
+    if has_original:
+        orig_result = results['original']
+        print(f"{'Original':<15} {orig_result['test_loss']:<12.4f} "
+              f"{orig_result['final_train_loss']:<12.4f} "
+              f"{orig_result['wall_time']:<12.2f} {'N/A':<15}")
 
     # DR methods
-    baseline_test_loss = orig_result['test_loss']
+    baseline_test_loss = None
+    if has_original and orig_result is not None:
+        baseline_test_loss = orig_result['test_loss']
+
     for dr_method in dr_methods:
         if dr_method in results:
             dr_result = results[dr_method]
@@ -123,25 +147,24 @@ def _print_performance_comparison(
                   f"{dr_result['final_train_loss']:<12.4f} "
                   f"{dr_result['wall_time']:<12.2f} {str(n_comp):<15}")
 
-    # Performance changes
-    print("\n" + "-" * 80)
-    print("Performance Changes vs Original:")
-    print("-" * 80)
-    for dr_method in dr_methods:
-        if dr_method in results:
-            dr_result = results[dr_method]
-            test_loss_change = ((dr_result['test_loss'] - baseline_test_loss) / baseline_test_loss) * 100
-            time_change = ((dr_result['wall_time'] - orig_result['wall_time']) / orig_result['wall_time']) * 100
-            n_comp = dr_result.get('n_components', 'N/A')
-            
-            improvement_indicator = "↓" if test_loss_change < 0 else "↑"
-            time_indicator = "faster" if time_change < 0 else "slower"
-            
-            print(f"{dr_method.upper():<5} (n={n_comp:<3}): "
-                  f"Test loss {improvement_indicator} {abs(test_loss_change):>5.2f}%, "
-                  f"{abs(time_change):>5.1f}% {time_indicator}")
-
-
+    # Performance changes (only if original is available)
+    if has_original and orig_result is not None and baseline_test_loss is not None:
+        print("\n" + "-" * 80)
+        print("Performance Changes vs Original:")
+        print("-" * 80)
+        for dr_method in dr_methods:
+            if dr_method in results:
+                dr_result = results[dr_method]
+                test_loss_change = ((dr_result['test_loss'] - baseline_test_loss) / baseline_test_loss) * 100
+                time_change = ((dr_result['wall_time'] - orig_result['wall_time']) / orig_result['wall_time']) * 100
+                n_comp = dr_result.get('n_components', 'N/A')
+                
+                improvement_indicator = "↓" if test_loss_change < 0 else "↑"
+                time_indicator = "faster" if time_change < 0 else "slower"
+                
+                print(f"{dr_method.upper():<5} (n={n_comp:<3}): "
+                      f"Test loss {improvement_indicator} {abs(test_loss_change):>5.2f}%, "
+                      f"{abs(time_change):>5.1f}% {time_indicator}")
 def _plot_learning_curves(results, dr_methods, dataset, save_path, eval_interval=100):
     """Plot individual and combined learning curves for Step 4."""
     os.makedirs(save_path, exist_ok=True)
@@ -198,7 +221,7 @@ def _plot_learning_curves(results, dr_methods, dataset, save_path, eval_interval
             save_path=f"{save_path}/combined_learning_curves.png"
         )
 
-    print(f"\nSaved learning curves to: {save_path}")
+    print(f"Saved learning curves to: {save_path}")
 
 
 def _train_single_method(
@@ -308,7 +331,224 @@ def _train_nn_on_data(
     }
 
 
-def run_neural_networks_on_dr_data(
+def train_neural_networks(
+    X_data_dict: Dict[str, np.ndarray],
+    y_original: np.ndarray,
+    dataset: str,
+    method: str,
+    save_path: str,
+    ml_logger: MLLogger,
+    seed: int,
+    batch_size: int,
+    optimizer: str,
+    hidden_layers: List[int],
+    max_updates: int,
+    learning_rate: float,
+    betas: Tuple[float, float],
+    weight_decay: float,
+    dropout_p: float,
+    l_threshold: float,
+    label_smoothing_alpha: float,
+    activation: str,
+    config_info: Optional[Dict[str, Dict[str, Any]]] = None,
+    step_name: str = "Neural Network Training"
+) -> Dict[str, Any]:
+    """
+    Unified neural network training function that handles any combination of data.
+    
+    Args:
+        X_data_dict: Dict mapping config names to X data. 
+                     e.g., {'original': X_original, 'pca': X_pca, 'ica': X_ica}
+        y_original: Target labels (same for all configurations)
+        config_info: Optional dict with metadata per config (e.g., {'pca': {'n_components': 5}})
+        step_name: Display name for this training run
+        
+    Returns:
+        Dict with keys from X_data_dict plus 'total_time'
+        
+    Example:
+        # Train on original only
+        results = train_neural_networks(
+            X_data_dict={'original': X_full}, 
+            y_original=y_full, ...
+        )
+        
+        # Train on DR methods only
+        results = train_neural_networks(
+            X_data_dict={
+                'pca': dr_results['pca']['X_transformed'],
+                'ica': dr_results['ica']['X_transformed'],
+                'rp': dr_results['rp']['X_transformed']
+            },
+            y_original=y_full,
+            config_info={
+                'pca': {'n_components': dr_results['pca']['n_components']},
+                'ica': {'n_components': dr_results['ica']['n_components']},
+                'rp': {'n_components': dr_results['rp']['n_components']}
+            },
+            ...
+        )
+        
+        # Train on both
+        results = train_neural_networks(
+            X_data_dict={
+                'original': X_full,
+                'pca': dr_results['pca']['X_transformed'],
+                'ica': dr_results['ica']['X_transformed'],
+                'rp': dr_results['rp']['X_transformed']
+            },
+            ...
+        )
+    """
+    start_time = time.perf_counter()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    results = {}
+    
+    if config_info is None:
+        config_info = {}
+    
+    # Determine output dimension and loss function
+    out_dim = 1 if method == 'regression' else len(np.unique(y_original))
+    loss_fn = nn.MSELoss() if method == 'regression' else nn.CrossEntropyLoss(label_smoothing=label_smoothing_alpha)
+    
+    # Shared training parameters
+    train_params = {
+        'method': method, 'device': device, 'loss_fn': loss_fn,
+        'seed': seed, 'batch_size': batch_size, 'optimizer_kind': optimizer,
+        'hidden_layers': hidden_layers, 'max_updates': max_updates,
+        'learning_rate': learning_rate, 'betas': betas, 'weight_decay': weight_decay,
+        'dropout_p': dropout_p, 'l_threshold': l_threshold,
+        'label_smoothing_alpha': label_smoothing_alpha, 'activation': activation,
+        'out_dim': out_dim
+    }
+    
+    print("\n" + "="*80)
+    print(f"{step_name}")
+    print("="*80)
+    
+    # Train each configuration
+    for config_name, X_data in X_data_dict.items():
+        # Get metadata for this config
+        info = config_info.get(config_name, {})
+        n_components = info.get('n_components', None)
+        display_name = info.get('display_name', f"{config_name.upper()} Data")
+        
+        print(f"Training {config_name.upper()}")
+        if n_components is not None:
+            print(f"  n_components: {n_components}")
+        
+        ml_logger.log_metric(f'{config_name}_training_start', time.perf_counter())
+        
+        # Train model - y_original is intentionally used for all configs
+        # This is correct: DR methods reduce X dimensions but y stays the same
+        result = _train_nn_on_data(
+            X=X_data, 
+            y=y_original,  # ← Same y for all configs (not a bug!)
+            dataset_name=display_name, 
+            ml_logger=ml_logger, 
+            **train_params
+        )
+        
+        if n_components is not None:
+            result['n_components'] = n_components
+        
+        log_training_curves(ml_logger, config_name, result['curves'], 
+                          result['final_train_loss'], result['test_loss'], n_components)
+        results[config_name] = result
+        print_result_summary(display_name, result['test_loss'], 
+                           result['final_train_loss'], result['wall_time'], n_components)
+        print(f"{config_name.upper()} training completed")
+    
+    print("="*80)
+    
+    total_time = time.perf_counter() - start_time
+    print(f"{step_name} completed in {total_time:.2f}s\n")
+    
+    results['total_time'] = total_time
+    return results
+
+
+def run_neural_networks_on_original(
+    X_original: np.ndarray,
+    y_original: np.ndarray,
+    dataset: str,
+    method: str,
+    save_path: str,
+    ml_logger: MLLogger,
+    seed: int,
+    batch_size: int,
+    optimizer: str,
+    hidden_layers: List[int],
+    max_updates: int,
+    learning_rate: float,
+    betas: Tuple[float, float],
+    weight_decay: float,
+    dropout_p: float,
+    l_threshold: float,
+    label_smoothing_alpha: float,
+    activation: str
+) -> Dict[str, Any]:
+    """Train neural network on original (non-reduced) data only.
+    
+    Convenience wrapper around train_neural_networks().
+    Returns dict with key 'original' containing all metrics.
+    """
+    cache_manager = CacheManager()
+    
+    # Check cache
+    cache_params = {
+        'seed': seed, 'method': method, 'batch_size': batch_size, 'optimizer': optimizer,
+        'hidden_layers': tuple(hidden_layers), 'max_updates': max_updates,
+        'learning_rate': learning_rate, 'betas': betas, 'weight_decay': weight_decay,
+        'dropout_p': dropout_p, 'l_threshold': l_threshold,
+        'label_smoothing_alpha': label_smoothing_alpha, 'activation': activation,
+        'n_classes': len(np.unique(y_original)), 'dr_methods': []
+    }
+    cached_result = cache_manager.load(dataset, 'neural_networks_on_original', cache_params)
+    if cached_result is not None:
+        print(f"Loaded cached results for {dataset} neural networks on original data")
+        return cached_result
+    else:
+        print(f"No cached results found for {dataset} neural networks on original data, training from scratch")
+    
+    results = train_neural_networks(
+        X_data_dict={'original': X_original},
+        y_original=y_original,
+        dataset=dataset,
+        method=method,
+        save_path=save_path,
+        ml_logger=ml_logger,
+        seed=seed,
+        batch_size=batch_size,
+        optimizer=optimizer,
+        hidden_layers=hidden_layers,
+        max_updates=max_updates,
+        learning_rate=learning_rate,
+        betas=betas,
+        weight_decay=weight_decay,
+        dropout_p=dropout_p,
+        l_threshold=l_threshold,
+        label_smoothing_alpha=label_smoothing_alpha,
+        activation=activation,
+        config_info={'original': {'display_name': 'Original Data (Baseline)'}},
+        step_name="STEP 4a: Training Neural Networks on Original Data"
+    )
+    
+    # Log results
+    hyperparameters = {
+        'batch_size': batch_size, 'max_updates': max_updates,
+        'learning_rate': learning_rate, 'weight_decay': weight_decay,
+        'hidden_layers': hidden_layers, 'activation': activation,
+        'dropout': dropout_p, 'optimizer': optimizer, 'betas': betas, 'seed': seed
+    }
+    _log_step_results(ml_logger, "Step 4a: Neural Networks on Original Data", results, hyperparameters, dataset)
+    
+    cache_manager.save(dataset, 'neural_networks_on_original', cache_params, results)
+    print(f"Cached neural networks on original results")
+    return results
+
+
+def run_neural_networks_on_reduced(
     X_original: np.ndarray,
     y_original: np.ndarray,
     dataset: str,
@@ -329,117 +569,141 @@ def run_neural_networks_on_dr_data(
     label_smoothing_alpha: float,
     activation: str
 ) -> Dict[str, Any]:
-    """Retrain neural networks on DR data and compare with original."""
-    start_time = time.perf_counter()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    cache_manager = CacheManager()  # Use centralized cache manager
-    results = {}
+    """Train neural networks on dimensionality-reduced data (PCA, ICA, RP).
+    
+    Convenience wrapper around train_neural_networks().
+    Returns dict with keys 'pca', 'ica', 'rp' containing all metrics.
+    """
+    cache_manager = CacheManager()
     
     # Check cache
     cache_params = {
-        'seed': seed,
-        'method': method,
-        'batch_size': batch_size,
-        'optimizer': optimizer,
-        'hidden_layers': tuple(hidden_layers),  # Convert to tuple for hashing
-        'max_updates': max_updates,
-        'learning_rate': learning_rate,
-        'betas': betas,
-        'weight_decay': weight_decay,
-        'dropout_p': dropout_p,
-        'l_threshold': l_threshold,
-        'label_smoothing_alpha': label_smoothing_alpha,
-        'activation': activation,
-        'n_classes': len(np.unique(y_original)),
-        'dr_methods': sorted(list(dr_results.keys()))
-    }
-    cached_result = cache_manager.load(dataset, 'neural_networks_on_dr', cache_params)
-    if cached_result is not None:
-        print(f"Loaded cached results for {dataset} neural networks on DR data")
-        return cached_result
-    
-    # Determine output dimension and loss function
-    out_dim = 1 if method == 'regression' else len(np.unique(y_original))
-    loss_fn = nn.MSELoss() if method == 'regression' else nn.CrossEntropyLoss(label_smoothing=label_smoothing_alpha)
-    
-    # Shared training parameters
-    train_params = {
-        'method': method, 'device': device, 'loss_fn': loss_fn,
-        'seed': seed, 'batch_size': batch_size, 'optimizer_kind': optimizer,
-        'hidden_layers': hidden_layers, 'max_updates': max_updates,
+        'seed': seed, 'method': method, 'batch_size': batch_size, 'optimizer': optimizer,
+        'hidden_layers': tuple(hidden_layers), 'max_updates': max_updates,
         'learning_rate': learning_rate, 'betas': betas, 'weight_decay': weight_decay,
         'dropout_p': dropout_p, 'l_threshold': l_threshold,
         'label_smoothing_alpha': label_smoothing_alpha, 'activation': activation,
-        'out_dim': out_dim
+        'n_classes': len(np.unique(y_original)),
+        'dr_methods': sorted(list(dr_results.keys()))
     }
+    cached_result = cache_manager.load(dataset, 'neural_networks_on_reduced', cache_params)
+    if cached_result is not None:
+        print(f"Loaded cached results for {dataset} neural networks on reduced data")
+        return cached_result
+    else:
+        print(f"No cached results found for {dataset} neural networks on reduced data, training from scratch")
     
-    # Prepare all training tasks
-    training_tasks = [
-        ('original', 'Original Data (Baseline)', X_original, y_original, None),
-    ]
-    
+    # Build data dict and config info
+    X_data_dict = {}
+    config_info = {}
     dr_methods = ['pca', 'ica', 'rp']
+    
     for dr_method in dr_methods:
-        X_dr = dr_results[dr_method]['X_transformed']
-        n_components = dr_results[dr_method]['n_components']
-        training_tasks.append((
-            dr_method, 
-            f"{dr_method.upper()}-transformed Data", 
-            X_dr, 
-            y_original, 
-            n_components
-        ))
+        X_data_dict[dr_method] = dr_results[dr_method]['X_transformed']
+        config_info[dr_method] = {
+            'n_components': dr_results[dr_method]['n_components'],
+            'display_name': f"{dr_method.upper()}-transformed Data"
+        }
     
-    # Train all methods sequentially (Parallel had issues with shared state)
-    print("\n" + "="*80)
-    print("STEP 4: Training Neural Networks")
-    print("="*80)
+    results = train_neural_networks(
+        X_data_dict=X_data_dict,
+        y_original=y_original,
+        dataset=dataset,
+        method=method,
+        save_path=save_path,
+        ml_logger=ml_logger,
+        seed=seed,
+        batch_size=batch_size,
+        optimizer=optimizer,
+        hidden_layers=hidden_layers,
+        max_updates=max_updates,
+        learning_rate=learning_rate,
+        betas=betas,
+        weight_decay=weight_decay,
+        dropout_p=dropout_p,
+        l_threshold=l_threshold,
+        label_smoothing_alpha=label_smoothing_alpha,
+        activation=activation,
+        config_info=config_info,
+        step_name="STEP 4b: Training Neural Networks on Reduced Data"
+    )
     
-    for method_key, display_name, X_data, y_data, n_comp in training_tasks:
-        print(f"\nTraining {method_key.upper()}")
-        
-        ml_logger.log_metric(f'{method_key}_training_start', time.perf_counter())
-        
-        result = _train_nn_on_data(X=X_data, y=y_data, dataset_name=display_name, 
-                                  ml_logger=ml_logger, **train_params)
-        
-        if n_comp is not None:
-            result['n_components'] = n_comp
-        
-        log_training_curves(ml_logger, method_key, result['curves'], result['final_train_loss'], result['test_loss'], n_comp) #type:ignore
-        results[method_key] = result
-        print_result_summary(display_name, result['test_loss'], result['final_train_loss'], result['wall_time'], n_comp)
-        print(f"{method_key.upper()} training completed")
-    
-    print("="*80)
-
-    # 3. Summary and Visualization
+    # Summary and visualization
     _print_performance_comparison(results, dr_methods)
     
     print("\n" + "="*80)
-    print("STEP 4: Generating Learning Curve Visualizations")
+    print("STEP 4b: Generating Learning Curve Visualizations")
     print("="*80)
     _plot_learning_curves(results, dr_methods, dataset, save_path, eval_interval=100)
     
-    total_time = time.perf_counter() - start_time
-    print(f"\nStep 4 completed in {total_time:.2f}s")
-    print("="*80 + "\n")
-    
-    # 4. Log Final Results
+    # Log results
     hyperparameters = {
         'batch_size': batch_size, 'max_updates': max_updates,
         'learning_rate': learning_rate, 'weight_decay': weight_decay,
         'hidden_layers': hidden_layers, 'activation': activation,
         'dropout': dropout_p, 'optimizer': optimizer, 'betas': betas, 'seed': seed
     }
+    _log_step_results(ml_logger, "Step 4b: Neural Networks on Reduced Data", results, hyperparameters, dataset)
     
-    _log_step_results(ml_logger, "Step 4: Neural Networks on DR Data", results, hyperparameters, dataset)
+    cache_manager.save(dataset, 'neural_networks_on_reduced', cache_params, results)
+    print(f"Cached neural networks on reduced results")
+    return results
+
+
+def run_neural_networks_on_data(
+    X_original: np.ndarray,
+    y_original: np.ndarray,
+    dataset: str,
+    method: str,
+    save_path: str,
+    ml_logger: MLLogger,
+    seed: int,
+    dr_results: Dict[str, Any],
+    batch_size: int,
+    optimizer: str,
+    hidden_layers: List[int],
+    max_updates: int,
+    learning_rate: float,
+    betas: Tuple[float, float],
+    weight_decay: float,
+    dropout_p: float,
+    l_threshold: float,
+    label_smoothing_alpha: float,
+    activation: str
+) -> Dict[str, Any]:
+    """Convenience wrapper: trains on both original and reduced data, returns combined results.
+    
+    Calls run_neural_networks_on_original() and run_neural_networks_on_reduced()
+    and merges results into single dict with all configurations.
+    """
+    print("\n" + "="*80)
+    print("STEP 4: Training Neural Networks on Original and Reduced Data")
+    print("="*80 + "\n")
+    
+    start_time = time.perf_counter()
+    
+    # Train on original
+    original_results = run_neural_networks_on_original(
+        X_original, y_original, dataset, method, save_path, ml_logger, seed,
+        batch_size, optimizer, hidden_layers, max_updates, learning_rate, betas,
+        weight_decay, dropout_p, l_threshold, label_smoothing_alpha, activation
+    )
+    
+    # Train on reduced
+    reduced_results = run_neural_networks_on_reduced(
+        X_original, y_original, dataset, method, save_path, ml_logger, seed, dr_results,
+        batch_size, optimizer, hidden_layers, max_updates, learning_rate, betas,
+        weight_decay, dropout_p, l_threshold, label_smoothing_alpha, activation
+    )
+    
+    # Merge results
+    results = {**original_results, **reduced_results}
+    results['total_time'] = time.perf_counter() - start_time
+    
+    print("="*80)
+    print(f"STEP 4 completed in {results['total_time']:.2f}s")
+    print("="*80 + "\n")
+    
     ml_logger.generate_log_report(output_file=f"{save_path}/execution_report.txt")
-    
-    # Add total time to results
-    results['total_time'] = total_time
-    
-    # Save to cache
-    cache_manager.save(dataset, 'neural_networks_on_dr', cache_params, results)
     
     return results

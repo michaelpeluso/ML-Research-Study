@@ -19,9 +19,11 @@ class ICAReduction(BaseDR):
         self.tol = tol
     
     def fit_transform(self, X, n_components):
-        """Fit ICA and transform X with whitening disabled for consistency."""
-        whiten = False  # Disable whitening to match other methods
+        """Fit ICA and transform X with whitening enabled"""
+        whiten = 'unit-variance'
         print(f"Fitting ICA with n_components={n_components}, whiten={whiten}, max_iter={self.max_iter}, tol={self.tol}")
+        
+        X_mean = np.mean(X, axis=0)
         
         ica = FastICA(
             n_components=n_components,
@@ -37,9 +39,10 @@ class ICAReduction(BaseDR):
         kurtosis = np.mean(np.abs(kurtosis_per_comp))
         print(f"  Mean absolute kurtosis: {kurtosis:.4f}")
         
-        # Store kurtosis in model for later retrieval (dynamic attributes)
+        # Store kurtosis and mean in model for later retrieval (dynamic attributes)
         ica.mean_abs_kurtosis_ = kurtosis  # type: ignore[attr-defined]
         ica.kurtosis_per_component_ = kurtosis_per_comp  # type: ignore[attr-defined]
+        ica.data_mean_ = X_mean  # type: ignore[attr-defined] - Store mean for reconstruction
         
         return ica, X_transformed
     
@@ -61,8 +64,9 @@ class ICAReduction(BaseDR):
     
     def reconstruction_error(self, X_original, X_transformed, model):
         """Compute reconstruction error for ICA."""
-        # ICA mixing matrix
-        X_reconstructed = np.dot(X_transformed, model.mixing_.T) + model.mean_
+        # ICA mixing matrix - with whitening enabled, use model.mean_ if available
+        mean = getattr(model, 'mean_', getattr(model, 'data_mean_', 0))
+        X_reconstructed = np.dot(X_transformed, model.mixing_.T) + mean
         mse = float(np.mean((X_original - X_reconstructed) ** 2))
         return mse
     

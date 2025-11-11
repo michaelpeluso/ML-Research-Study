@@ -257,15 +257,21 @@ class BaseClustering(ABC):
             np.savetxt(pair_path, pairwise, delimiter=',', fmt='%.6f')
             
             step_info.update(results)
+            
+            return results
     
     
-    def run(self, X_train, n_clusters: int | tuple = (2, 10), stability_runs=10, n_jobs: int = 1, n_init=10):
+    def run(self, X_train, n_clusters: int | tuple | list = (2, 10), stability_runs=10, n_jobs: int = 1, n_init=10):
         """Generic clustering runner that works for all algorithms."""
         # Check cache
         params = {'seed': self.seed, 'n_clusters': n_clusters, 'stability_runs': stability_runs,
                 'n_init': n_init, 'silhouette_subsample': self.silhouette_subsample, 'data_shape': X_train.shape}
         cached_result = self.cache_manager.load(self.dataset, f'{self.algorithm_name.lower()}_clustering', params)
-        if cached_result is not None: return cached_result
+        if cached_result is not None:
+            # Ensure stability key exists for backward compatibility
+            if 'stability' not in cached_result:
+                cached_result['stability'] = None
+            return cached_result
         
         # Main
         start_log_index = len(self.ml_logger.current_logs)
@@ -277,10 +283,14 @@ class BaseClustering(ABC):
                 model, selection_results = self.measure_clustering(X_train, chosen_n, n_init=n_init)
                 best_result = selection_results
                 
-            elif isinstance(n_clusters, tuple) and len(n_clusters) == 2:
-                print(f"Evaluating {self.param_name} values from {n_clusters[0]} to {n_clusters[1]} (parallel jobs={n_jobs})")
-
-                n_values = list(range(n_clusters[0], n_clusters[1] + 1))
+            elif isinstance(n_clusters, (tuple, list)):
+                # Convert tuple to list if needed
+                if isinstance(n_clusters, tuple) and len(n_clusters) == 2:
+                    n_values = list(range(n_clusters[0], n_clusters[1] + 1))
+                    print(f"Evaluating {self.param_name} values from {n_clusters[0]} to {n_clusters[1]} (parallel jobs={n_jobs})")
+                else:
+                    n_values = list(n_clusters)
+                    print(f"Evaluating {self.param_name} values {n_values} (parallel jobs={n_jobs})")
                 
                 # Parallel execution - single run per k (n_init handles stability)
                 results_with_models = Parallel(n_jobs=n_jobs, backend='loky', verbose=0)(
@@ -354,6 +364,15 @@ class BaseClustering(ABC):
 
         self.ml_logger.generate_log_report(output_file=f"{self.save_path}/execution_report.txt", start_index=start_log_index)
         
+        # Get stability results from the last logged step
+        stability_results = None
+        if self.ml_logger.current_logs:
+            # Find the stability analysis step in the recent logs
+            for log_entry in reversed(self.ml_logger.current_logs):
+                if 'Stability Analysis' in log_entry.get('step', ''):
+                    stability_results = log_entry.get('step_info', {})
+                    break
+        
         # Return comprehensive results for step 3
         labels, centers = self.extract_results(model, X_train)
         result = {
@@ -362,7 +381,8 @@ class BaseClustering(ABC):
             'centers': centers,
             'chosen_n': chosen_n,
             'best_result': best_result,
-            'selection_results': selection_results if isinstance(n_clusters, tuple) else None
+            'selection_results': selection_results if isinstance(n_clusters, tuple) else None,
+            'stability': stability_results
         }
         
         params = {'seed': self.seed, 'n_clusters': n_clusters, 'stability_runs': stability_runs,

@@ -217,3 +217,310 @@ _program_start_time = time.perf_counter()
 def print_t(*args):
     time_str = f"{time.perf_counter() - _program_start_time:.2f}s"
     print(f"{time_str:<10}| ", *args)
+
+
+def generate_ul_summary(all_results):
+    """Generate comprehensive summary for Unsupervised Learning report."""
+    import pandas as pd
+    
+    print("\n" + "="*80)
+    print("UNSUPERVISED LEARNING EXPERIMENT SUMMARY")
+    print("="*80 + "\n")
+    
+    for result in all_results:
+        dataset = result['dataset']
+        clustering_results = result['clustering_results']
+        dr_results = result['dr_results']
+        clustering_dr_results = result['clustering_dr_results']
+        save_path = result['save_path']
+        
+        print("\n" + "-"*80)
+        print(f"DATASET: {dataset.upper()}")
+        print("-"*80)
+        
+        # Step 1: Clustering on Original Data
+        print("\n[STEP 1] Clustering on Original Data")
+        print("-" * 40)
+        
+        kmeans_original = clustering_results['kmeans']
+        gmm_original = clustering_results['em']
+        
+        print(f"K-Means:")
+        print(f"  Best k: {kmeans_original['chosen_n']}")
+        print(f"  Silhouette: {kmeans_original['best_result']['silhouette_score']:.3f}")
+        print(f"  Dunn Index: {kmeans_original['best_result']['dunn_index']:.3f}")
+        print(f"  Calinski-Harabasz: {kmeans_original['best_result']['calinski_harabasz_score']:.1f}")
+        print(f"  Davies-Bouldin: {kmeans_original['best_result']['davies_bouldin_score']:.3f}")
+        
+        # Handle stability - it might be None or missing
+        stability = kmeans_original.get('stability') or {}
+        if stability and stability.get('stability_score') is not None:
+            print(f"  Stability (ARI): {stability['stability_score']:.3f} ± {stability.get('stability_std', 0):.3f}")
+        else:
+            print(f"  Stability (ARI): N/A")
+        
+        print(f"\nGMM:")
+        print(f"  Best n_components: {gmm_original['chosen_n']}")
+        print(f"  Silhouette: {gmm_original['best_result']['silhouette_score']:.3f}")
+        print(f"  Dunn Index: {gmm_original['best_result']['dunn_index']:.3f}")
+        print(f"  BIC: {gmm_original['best_result']['bic']:.1f}")
+        print(f"  AIC: {gmm_original['best_result']['aic']:.1f}")
+        print(f"  Log-Likelihood: {gmm_original['best_result']['log_likelihood']:.1f}")
+        
+        # Handle stability - it might be None or missing
+        stability = gmm_original.get('stability') or {}
+        if stability and stability.get('stability_score') is not None:
+            print(f"  Stability (ARI): {stability['stability_score']:.3f} ± {stability.get('stability_std', 0):.3f}")
+        else:
+            print(f"  Stability (ARI): N/A")
+        
+        # Step 2: Dimensionality Reduction
+        print("\n[STEP 2] Dimensionality Reduction")
+        print("-" * 40)
+        
+        for dr_method in ['pca', 'ica', 'rp']:
+            dr_result = dr_results[dr_method]
+            print(f"\n{dr_method.upper()}:")
+            print(f"  Best n_components: {dr_result['n_components']}")
+            print(f"  Selection Score: {dr_result['best_result']['mean_score']:.4f}")
+            if dr_result['best_result']['reconstruction_error']:
+                print(f"  Reconstruction Error: {dr_result['best_result']['reconstruction_error']:.4f}")
+            if dr_result['best_result']['cumulative_variance']:
+                print(f"  Cumulative Variance: {dr_result['best_result']['cumulative_variance']:.4f}")
+            print(f"  Execution Time: {dr_result['total_time']:.2f}s")
+        
+        # Step 3: Clustering on DR-transformed Data
+        print("\n[STEP 3] Clustering on DR-transformed Data")
+        print("-" * 40)
+        
+        for dr_method in ['pca', 'ica', 'rp']:
+            print(f"\n{dr_method.upper()} + Clustering:")
+            kmeans_dr = clustering_dr_results[dr_method]['kmeans']
+            gmm_dr = clustering_dr_results[dr_method]['em']
+            
+            print(f"  K-Means:")
+            print(f"    Best k: {kmeans_dr['chosen_n']}")
+            print(f"    Silhouette: {kmeans_dr['best_result']['silhouette_score']:.3f}")
+            print(f"    Dunn Index: {kmeans_dr['best_result']['dunn_index']:.3f}")
+            
+            # Handle stability - it might be None or missing
+            stability = kmeans_dr.get('stability') or {}
+            if stability and stability.get('stability_score') is not None:
+                print(f"    Stability (ARI): {stability['stability_score']:.3f} ± {stability.get('stability_std', 0):.3f}")
+            else:
+                print(f"    Stability (ARI): N/A")
+            
+            print(f"  GMM:")
+            print(f"    Best n_components: {gmm_dr['chosen_n']}")
+            print(f"    Silhouette: {gmm_dr['best_result']['silhouette_score']:.3f}")
+            print(f"    Dunn Index: {gmm_dr['best_result']['dunn_index']:.3f}")
+            print(f"    BIC: {gmm_dr['best_result']['bic']:.1f}")
+            
+            # Handle stability - it might be None or missing
+            stability = gmm_dr.get('stability') or {}
+            if stability and stability.get('stability_score') is not None:
+                print(f"    Stability (ARI): {stability['stability_score']:.3f} ± {stability.get('stability_std', 0):.3f}")
+            else:
+                print(f"    Stability (ARI): N/A")
+        
+        # Step 4 & 5: Neural Networks (only for accidents dataset)
+        nn_original_results = result.get('step_4a_nn_original')
+        nn_reduced_results = result.get('step_4b_nn_reduced')
+        nn_cluster_results = result.get('step_5_nn_with_clusters')
+        
+        if nn_original_results is not None or nn_reduced_results is not None:
+            print("\n[STEP 4] Neural Networks on Original + DR Data")
+            print("-" * 50)
+            
+            # Original baseline (from Step 4a)
+            if nn_original_results is not None and 'original' in nn_original_results:
+                orig_nn = nn_original_results['original']
+                print(f"Original (Baseline):")
+                print(f"  Test Loss: {orig_nn['test_loss']:.4f}")
+                print(f"  Train Loss: {orig_nn['final_train_loss']:.4f}")
+                print(f"  Wall Time: {orig_nn['wall_time']:.2f}s")
+                print(f"  Parameters: {orig_nn['n_params']:,}")
+                baseline_loss = orig_nn['test_loss']
+            elif nn_reduced_results is not None:
+                # If no original, use first DR method as baseline for comparison
+                first_dr_method = list(nn_reduced_results.keys())[0]
+                baseline_loss = nn_reduced_results[first_dr_method]['test_loss']
+                print(f"Using {first_dr_method.upper()} as baseline (no original data available)")
+            else:
+                baseline_loss = None
+            
+            # DR methods (from Step 4b)
+            if nn_reduced_results is not None:
+                for dr_method in ['pca', 'ica', 'rp']:
+                    if dr_method in nn_reduced_results:
+                        dr_nn = nn_reduced_results[dr_method]
+                        if baseline_loss is not None:
+                            improvement = ((baseline_loss - dr_nn['test_loss']) / baseline_loss) * 100
+                            improvement_str = f" ({improvement:+.2f}%)"
+                        else:
+                            improvement_str = ""
+                        print(f"\n{dr_method.upper()} (n={dr_nn.get('n_components', 'N/A')}):")
+                        print(f"  Test Loss: {dr_nn['test_loss']:.4f}{improvement_str}")
+                        print(f"  Train Loss: {dr_nn['final_train_loss']:.4f}")
+                        print(f"  Wall Time: {dr_nn['wall_time']:.2f}s")
+                        print(f"  Parameters: {dr_nn['n_params']:,}")
+        
+        if nn_cluster_results is not None:
+            print("\n[STEP 5] Neural Networks with Cluster Features")
+            print("-" * 50)
+            
+            # Baseline
+            baseline_nn = nn_cluster_results['baseline']
+            print(f"Baseline (Original Features):")
+            print(f"  Test Loss: {baseline_nn['test_loss']:.4f}")
+            print(f"  Train Loss: {baseline_nn['final_train_loss']:.4f}")
+            print(f"  Wall Time: {baseline_nn['wall_time']:.2f}s")
+            
+            # K-Means features
+            kmeans_key = 'kmeans_tuned' if 'kmeans_tuned' in nn_cluster_results else 'kmeans'
+            kmeans_nn = nn_cluster_results[kmeans_key]
+            improvement = ((baseline_nn['test_loss'] - kmeans_nn['test_loss']) / baseline_nn['test_loss']) * 100
+            print(f"\nK-Means Cluster Features:")
+            print(f"  Test Loss: {kmeans_nn['test_loss']:.4f} ({improvement:+.2f}%)")
+            print(f"  Train Loss: {kmeans_nn['final_train_loss']:.4f}")
+            print(f"  Wall Time: {kmeans_nn['wall_time']:.2f}s")
+            print(f"  Input Dim: {kmeans_nn['input_dim']}")
+            if kmeans_nn.get('n_cluster_features'):
+                print(f"  Cluster Features: {kmeans_nn['n_cluster_features']}")
+            
+            # EM/GMM features
+            em_key = 'em_tuned' if 'em_tuned' in nn_cluster_results else 'em'
+            em_nn = nn_cluster_results[em_key]
+            improvement = ((baseline_nn['test_loss'] - em_nn['test_loss']) / baseline_nn['test_loss']) * 100
+            print(f"\nEM/GMM Cluster Features:")
+            print(f"  Test Loss: {em_nn['test_loss']:.4f} ({improvement:+.2f}%)")
+            print(f"  Train Loss: {em_nn['final_train_loss']:.4f}")
+            print(f"  Wall Time: {em_nn['wall_time']:.2f}s")
+            print(f"  Input Dim: {em_nn['input_dim']}")
+            if em_nn.get('n_cluster_features'):
+                print(f"  Cluster Features: {em_nn['n_cluster_features']}")
+        
+        # Generate summary CSV (update to include NN results)
+        summary_data = []
+        
+        # Original clustering
+        stability = kmeans_original.get('stability') or {}
+        summary_data.append({
+            'Dataset': dataset,
+            'Step': 'Step 1',
+            'Method': 'K-Means (Original)',
+            'n_components/k': kmeans_original['chosen_n'] or None,
+            'Silhouette': kmeans_original['best_result']['silhouette_score'] or None,
+            'Dunn': kmeans_original['best_result']['dunn_index'] or None,
+            'CH_Score': kmeans_original['best_result']['calinski_harabasz_score'] or None,
+            'DB_Score': kmeans_original['best_result']['davies_bouldin_score'] or None,
+            'Stability_ARI': stability.get('stability_score') if stability else None
+        })
+        
+        stability = gmm_original.get('stability') or {}
+        summary_data.append({
+            'Dataset': dataset,
+            'Step': 'Step 1',
+            'Method': 'GMM (Original)',
+            'n_components/k': gmm_original['chosen_n'],
+            'Silhouette': gmm_original['best_result']['silhouette_score'],
+            'Dunn': gmm_original['best_result']['dunn_index'],
+            'CH_Score': gmm_original['best_result']['calinski_harabasz_score'],
+            'DB_Score': gmm_original['best_result']['davies_bouldin_score'],
+            'Stability_ARI': stability.get('stability_score') if stability else None
+        })
+        
+        # DR + Clustering
+        for dr_method in ['pca', 'ica', 'rp']:
+            kmeans_dr = clustering_dr_results[dr_method]['kmeans']
+            gmm_dr = clustering_dr_results[dr_method]['em']
+            
+            stability = kmeans_dr.get('stability') or {}
+            summary_data.append({
+                'Dataset': dataset,
+                'Step': 'Step 3',
+                'Method': f'K-Means ({dr_method.upper()})',
+                'n_components/k': kmeans_dr['chosen_n'],
+                'Silhouette': kmeans_dr['best_result']['silhouette_score'],
+                'Dunn': kmeans_dr['best_result']['dunn_index'],
+                'CH_Score': kmeans_dr['best_result']['calinski_harabasz_score'],
+                'DB_Score': kmeans_dr['best_result']['davies_bouldin_score'],
+                'Stability_ARI': stability.get('stability_score') if stability else None
+            })
+            
+            stability = gmm_dr.get('stability') or {}
+            summary_data.append({
+                'Dataset': dataset,
+                'Step': 'Step 3',
+                'Method': f'GMM ({dr_method.upper()})',
+                'n_components/k': gmm_dr['chosen_n'],
+                'Silhouette': gmm_dr['best_result']['silhouette_score'],
+                'Dunn': gmm_dr['best_result']['dunn_index'],
+                'CH_Score': gmm_dr['best_result']['calinski_harabasz_score'],
+                'DB_Score': gmm_dr['best_result']['davies_bouldin_score'],
+                'Stability_ARI': stability.get('stability_score') if stability else None
+            })
+        
+        # Add NN results to summary CSV
+        if nn_original_results is not None or nn_reduced_results is not None:
+            # Step 4: NN on original and DR data
+            if nn_original_results is not None and 'original' in nn_original_results:
+                nn_result = nn_original_results['original']
+                summary_data.append({
+                    'Dataset': dataset,
+                    'Step': 'Step 4',
+                    'Method': 'NN (Original)',
+                    'n_components/k': '',
+                    'Test_Loss': nn_result['test_loss'],
+                    'Train_Loss': nn_result['final_train_loss'],
+                    'Wall_Time': nn_result['wall_time'],
+                    'N_Params': nn_result['n_params']
+                })
+            
+            if nn_reduced_results is not None:
+                for method_key in ['pca', 'ica', 'rp']:
+                    if method_key in nn_reduced_results:
+                        nn_result = nn_reduced_results[method_key]
+                        summary_data.append({
+                            'Dataset': dataset,
+                            'Step': 'Step 4',
+                            'Method': f'NN ({method_key.upper()})',
+                            'n_components/k': nn_result.get('n_components', ''),
+                            'Test_Loss': nn_result['test_loss'],
+                            'Train_Loss': nn_result['final_train_loss'],
+                            'Wall_Time': nn_result['wall_time'],
+                            'N_Params': nn_result['n_params']
+                        })
+        
+        if nn_cluster_results is not None:
+            # Step 5: NN with cluster features
+            for method_key in ['baseline', 'kmeans', 'em']:
+                if method_key in nn_cluster_results:
+                    nn_result = nn_cluster_results[method_key]
+                    method_name = {
+                        'baseline': 'NN (Baseline)',
+                        'kmeans': 'NN (K-Means Features)',
+                        'em': 'NN (EM/GMM Features)'
+                    }[method_key]
+                    summary_data.append({
+                        'Dataset': dataset,
+                        'Step': 'Step 5',
+                        'Method': method_name,
+                        'n_components/k': '',
+                        'Test_Loss': nn_result['test_loss'],
+                        'Train_Loss': nn_result['final_train_loss'],
+                        'Wall_Time': nn_result['wall_time'],
+                        'Input_Dim': nn_result['input_dim'],
+                        'Cluster_Features': nn_result.get('n_cluster_features', '')
+                    })
+        
+        df = pd.DataFrame(summary_data)
+        summary_path = os.path.join(save_path, "ul_report_summary.csv")
+        os.makedirs(save_path, exist_ok=True)  # Ensure directory exists
+        df.to_csv(summary_path, index=False)
+        print(f"\n\nSummary table saved to: {summary_path}")
+        print(f"\n{df.to_string(index=False)}")
+    
+    print("\n" + "="*80)
+    print("END OF SUMMARY")
+    print("="*80 + "\n")

@@ -92,8 +92,12 @@ class CacheManager:
             return 'step3_clustering_dr'
             
         # Step 4: Neural Networks on DR
-        elif 'neural_networks_on_dr' in step_lower:
+        elif 'neural_networks_on_dr' in step_lower or 'neural_networks_on_reduced' in step_lower:
             return 'step4_nn_dr'
+            
+        # Step 4a: Neural Networks on Original
+        elif 'neural_networks_on_original' in step_lower:
+            return 'step4_nn_original'
             
         # Step 5: Neural Networks with Clusters
         elif 'neural_networks_with_clusters' in step_lower:

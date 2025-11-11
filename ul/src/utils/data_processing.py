@@ -7,11 +7,11 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from category_encoders import CountEncoder, TargetEncoder
+from category_encoders import CountEncoder
 import torch
 from torch.utils.data import TensorDataset, DataLoader
 
-from utils.logger import MLLogger
+from utils.logger import MLLogger, print_t as print
 
 # load data from cache if available - returns FULL dataset for unsupervised learning
 def load_or_process_data(dataset: str, target: str, method: str, subsample: float, seed: int, cache_dir="", ml_logger: MLLogger|None=None
