@@ -38,6 +38,7 @@ def load_or_process_data(dataset: str, target: str, method: str, subsample: floa
             def get_mem_mb(arr):
                 return arr.memory_usage(deep=True) if hasattr(arr, "memory_usage") else arr.nbytes
             mem_before = mem_after = (get_mem_mb(X_full) + get_mem_mb(y_full)) / (1024**2)
+            print(f"Loaded cached data: {total_rows:,} rows, {X_full.shape[1]} features")
 
         else:
             # load raw data
@@ -46,9 +47,13 @@ def load_or_process_data(dataset: str, target: str, method: str, subsample: floa
             if len(df) == 0:
                 raise ValueError(f"Dataset {dataset} is empty or not found.")
             
+            total_rows = len(df)
+            print(f"Raw data loaded: {total_rows:,} rows")
+            
             # subsample
             df = subsample_dataset(df, target, subsample, seed, method)
-            total_rows = len(df)
+            after_subsample = len(df)
+            print(f"After subsampling ({subsample*100:.1f}%): {after_subsample:,} rows")
 
             # clean
             print(f"Cleaning {dataset} data.")
@@ -62,15 +67,31 @@ def load_or_process_data(dataset: str, target: str, method: str, subsample: floa
             if method == "regression":
                 cleaned_df['Duration_Seconds'] = np.log1p(cleaned_df['Duration_Seconds']) # log(1 + x) to handle zeros/small values
             mem_after = cleaned_df.memory_usage(deep=True).sum() / (1024 ** 2)
+            
+            print(f"After cleaning: {total_cleaned:,} rows, {cleaned_df.shape[1]} columns")
+            print(f"Memory usage: {mem_before:.1f} MB → {mem_after:.1f} MB ({(mem_before-mem_after)/mem_before*100:.1f}% reduction)")
 
             # Separate X and y
             X = cleaned_df.drop(columns=[target])
             y = cleaned_df[target]
             
+            # Show target distribution
+            if method == "classification":
+                target_counts = y.value_counts().sort_index()
+                print(f"Target distribution ({target}):")
+                for val, count in target_counts.items():
+                    pct = count / len(y) * 100
+                    print(f"  {val}: {count:,} ({pct:.1f}%)")
+            else:
+                print(f"Target statistics ({target}):")
+                print(f"  Mean: {y.mean():.3f}, Std: {y.std():.3f}, Min: {y.min():.3f}, Max: {y.max():.3f}")
+            
             # Transform columns using the full dataset
             X_full, col_log_data = transform_full_dataset(dataset, X, y)
             y_full = y.values if hasattr(y, 'values') else y
-
+            
+            print(f"Final processed data: {X_full.shape[0]:,} samples × {X_full.shape[1]} features")
+            
             # cache data
             joblib.dump((X_full, y_full), cache_file)
             print(f"Saved processed full dataset to {cache_file}")
@@ -96,7 +117,7 @@ def split_processed_data(X: np.ndarray, y: np.ndarray, method: str, test_size: f
     """Split preprocessed data into train/val/test sets"""
     if not ml_logger: ml_logger = MLLogger()
     with ml_logger.log_step("Split Data") as step_info:
-        print(f"Splitting data (test={test_size}, val={val_size}).")
+        print(f"Splitting data (test={test_size*100:.1f}%, val={val_size*100:.1f}%).")
         
         stratify = y if method == "classification" else None
         
@@ -110,6 +131,27 @@ def split_processed_data(X: np.ndarray, y: np.ndarray, method: str, test_size: f
         X_train, X_val, y_train, y_val = train_test_split(
             X_temp, y_temp, test_size=val_size/(1-test_size), random_state=seed, stratify=stratify_temp
         )
+        
+        # Print detailed split information
+        total_samples = len(X)
+        train_pct = len(X_train) / total_samples * 100
+        val_pct = len(X_val) / total_samples * 100
+        test_pct = len(X_test) / total_samples * 100
+        
+        print(f"Data splits:")
+        print(f"  Train: {len(X_train):,} samples ({train_pct:.1f}%) - {X_train.shape[1]} features")
+        print(f"  Validation: {len(X_val):,} samples ({val_pct:.1f}%) - {X_val.shape[1]} features")
+        print(f"  Test: {len(X_test):,} samples ({test_pct:.1f}%) - {X_test.shape[1]} features")
+        
+        if method == "classification":
+            print(f"Stratified sampling: Yes")
+            print(f"Train class distribution:")
+            train_classes, train_counts = np.unique(y_train, return_counts=True)
+            for cls, count in zip(train_classes, train_counts):
+                pct = count / len(y_train) * 100
+                print(f"  Class {cls}: {count:,} ({pct:.1f}%)")
+        else:
+            print(f"Stratified sampling: No (regression)")
         
         step_info = {
             'train_shape': f"{X_train.shape[0]} samples x {X_train.shape[1]} features",

@@ -261,6 +261,44 @@ class BaseClustering(ABC):
             return results
     
     
+    def _ensure_plots_exist(self, X_train, cached_result, n_clusters):
+        """Check if plots exist for cached results, regenerate if missing."""
+        # Check if the main metrics plot exists (for range-based clustering)
+        if isinstance(n_clusters, (tuple, list)):
+            metrics_plot = os.path.join(self.save_path, "all_metrics.png")
+            
+            if not os.path.exists(metrics_plot):
+                selection_results = cached_result.get('selection_results')
+                chosen_n = cached_result.get('chosen_n')
+                
+                if selection_results and chosen_n:
+                    print(f"  Regenerating metrics plots for {self.algorithm_name} (loaded from cache)...")
+                    self.plot_metrics(selection_results, chosen_n=chosen_n)
+        
+        # Check if silhouette plots exist for the chosen cluster count
+        chosen_n = cached_result.get('chosen_n')
+        if chosen_n and chosen_n > 1:
+            dir_prefix = self.param_name[0]
+            cluster_dir = os.path.join(self.save_path, "clusters")
+            sil_path = os.path.join(cluster_dir, f"{dir_prefix}{chosen_n}_silhouette.png")
+            
+            # Regenerate silhouette plot if missing
+            if not os.path.exists(sil_path):
+                labels = cached_result.get('labels')
+                if labels is not None:
+                    print(f"  Regenerating silhouette plot for {self.param_name}={chosen_n} (loaded from cache)...")
+                    os.makedirs(cluster_dir, exist_ok=True)
+                    Xs, ys, sample_idx = sample_fit_labels(X_train, labels, sample_size=self.silhouette_subsample, seed=self.seed)
+                    sil_score, sample_sil_vals = self.compute_silhouette(Xs, ys)
+                    if sample_sil_vals is not None:
+                        plot_silhouette(X_train, labels,
+                                       title=f"Silhouette Plot ({dir_prefix}={chosen_n}) - Score: {sil_score:.3f}",
+                                       save_path=sil_path,
+                                       silhouette_avg=sil_score,
+                                       sample_silhouette_values=sample_sil_vals,
+                                       sample_indices=sample_idx)
+    
+    
     def run(self, X_train, n_clusters: int | tuple | list = (2, 10), stability_runs=10, n_jobs: int = 1, n_init=10):
         """Generic clustering runner that works for all algorithms."""
         # Check cache
@@ -271,6 +309,10 @@ class BaseClustering(ABC):
             # Ensure stability key exists for backward compatibility
             if 'stability' not in cached_result:
                 cached_result['stability'] = None
+            
+            # Regenerate plots if they don't exist
+            self._ensure_plots_exist(X_train, cached_result, n_clusters)
+            
             return cached_result
         
         # Main

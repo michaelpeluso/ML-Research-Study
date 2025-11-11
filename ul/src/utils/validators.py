@@ -1,6 +1,8 @@
 from typing import Dict, Any, List, Tuple
 import numpy as np
 
+from utils.logger import print_t as print
+
 
 class ExperimentDataValidator:
     """Validates that all expected data is present in experiment results."""

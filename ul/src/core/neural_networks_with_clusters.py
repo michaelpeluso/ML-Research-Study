@@ -8,8 +8,10 @@ from sklearn.metrics.pairwise import euclidean_distances
 
 from utils.cache_manager import CacheManager
 from utils.data_processing import split_processed_data, wrap_into_loaders
-from utils.logger import MLLogger
-from nerual_networks.models import set_seed, MLP
+from utils.logger import MLLogger, print_t as print
+from neural_networks.models import set_seed, MLP
+from neural_networks.training import train_to_budget, eval_loss
+
 
 
 def extract_cluster_features(
@@ -309,9 +311,7 @@ def train_nn_on_features(
     if n_cluster_features is not None:
         print(f"Cluster features: {n_cluster_features} dimensions")
     
-    # Train
-    from nerual_networks.training import train_to_budget, eval_loss
-    
+    # Training    
     train_start = time.perf_counter()
     curves, steps_to_threshold, wall_time, final_train_loss = train_to_budget(
         model, optimizer, train_loader, val_loader,

@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+from utils.logger import print_t as print
+
 matplotlib.use('Agg')
 
 def plot_curve(x: Union[list, Any], y_list: list, labels: Optional[list[str]] = None, xlabel: str = "", ylabel: str = "", title: str = "", save_path: Optional[str] = None, marker: Optional[Union[str, List[str]]] = None, colors: Optional[list[str]] = None, linestyles: Optional[list[str]] = None, xscale: str = 'linear', std: Optional[List[float]] = None, lower: Optional[List[float]] = None, upper: Optional[List[float]] = None, band_label: str = '± Std Dev'):
@@ -722,13 +724,21 @@ def generate_clustering_heatmaps(all_results, save_path=None):
         # Convert to numpy array and normalize each row for better visualization
         kmeans_array = np.array(kmeans_data, dtype=float)
         
+        # Define metrics where lower values are better
+        lower_better_kmeans = ['davies_bouldin_score', 'inertia']
+        
         # Create normalized version for heatmap (0-1 scale per metric)
         kmeans_normalized = np.zeros_like(kmeans_array)
-        for i in range(kmeans_array.shape[0]):
+        for i, (metric_key, _) in enumerate(kmeans_metrics):
             row = kmeans_array[i]
             valid_mask = ~np.isnan(row)
             if valid_mask.any():
                 valid_values = row[valid_mask]
+                
+                # Invert values for "lower is better" metrics
+                if metric_key in lower_better_kmeans:
+                    valid_values = -valid_values
+                
                 min_val, max_val = valid_values.min(), valid_values.max()
                 if max_val - min_val > 1e-10:
                     kmeans_normalized[i, valid_mask] = (valid_values - min_val) / (max_val - min_val)
@@ -745,7 +755,7 @@ def generate_clustering_heatmaps(all_results, save_path=None):
             ylabel='Metric',
             row_labels=row_labels,
             col_labels=columns,
-            colorbar_label='Normalized Value (0-1)',
+            colorbar_label='Normalized (0=Worst, 1=Best)',
             cmap='RdYlGn',
             vmin=0,
             vmax=1,
@@ -796,13 +806,21 @@ def generate_clustering_heatmaps(all_results, save_path=None):
         # Convert to numpy array and normalize
         gmm_array = np.array(gmm_data, dtype=float)
         
+        # Define metrics where lower values are better
+        lower_better_gmm = ['davies_bouldin_score', 'bic', 'aic']
+        
         # Create normalized version for heatmap
         gmm_normalized = np.zeros_like(gmm_array)
-        for i in range(gmm_array.shape[0]):
+        for i, (metric_key, _) in enumerate(gmm_metrics):
             row = gmm_array[i]
             valid_mask = ~np.isnan(row)
             if valid_mask.any():
                 valid_values = row[valid_mask]
+                
+                # Invert values for "lower is better" metrics
+                if metric_key in lower_better_gmm:
+                    valid_values = -valid_values
+                
                 min_val, max_val = valid_values.min(), valid_values.max()
                 if max_val - min_val > 1e-10:
                     gmm_normalized[i, valid_mask] = (valid_values - min_val) / (max_val - min_val)
@@ -819,7 +837,7 @@ def generate_clustering_heatmaps(all_results, save_path=None):
             ylabel='Metric',
             row_labels=row_labels_gmm,
             col_labels=columns,
-            colorbar_label='Normalized Value (0-1)',
+            colorbar_label='Normalized (0=Worst, 1=Best)',
             cmap='RdYlGn',
             vmin=0,
             vmax=1,

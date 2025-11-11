@@ -57,6 +57,32 @@ class BaseDR(ABC):
         """Compute algorithm-specific selection score"""
         pass
     
+    def _ensure_plots_exist(self, cached_result, y_train):
+        """Check if plots exist for cached DR results, regenerate if missing."""
+        # Check for key plot files
+        selection_plot = os.path.join(self.save_path, f"{self.algorithm_name.lower()}_selection_metric.png")
+        projection_2d = os.path.join(self.save_path, "projection_2d.png")
+        component_plot = os.path.join(self.save_path, "component_heatmap.png")
+        
+        # Check if any key plots are missing
+        missing_plots = []
+        if not os.path.exists(selection_plot):
+            missing_plots.append("selection_metric")
+        if not os.path.exists(projection_2d):
+            missing_plots.append("projection_2d")
+        if not os.path.exists(component_plot):
+            missing_plots.append("component_heatmap")
+        
+        # If any plots are missing, regenerate all
+        if missing_plots:
+            print(f"  Regenerating {len(missing_plots)} missing plot(s) for {self.algorithm_name} (loaded from cache)...")
+            best_result = cached_result.get('best_result')
+            results = cached_result.get('results')
+            X_transformed = cached_result.get('X_transformed')
+            
+            if best_result and results and X_transformed is not None:
+                self.plot_projection(best_result, X_transformed, results, y_train)
+    
     def evaluate_downstream_task(self, X_train, n_components_range):
         """Evaluate dimensionality reduction label-free"""
         print(f"Evaluating {self.algorithm_name} on {self.dataset} for components in {n_components_range}")
@@ -126,7 +152,10 @@ class BaseDR(ABC):
         # Check cache
         params = {'seed': self.seed, 'n_components_range': n_components_range, 'task': task, 'data_shape': X_train.shape}
         cached_result = self.cache_manager.load(self.dataset, f'{self.algorithm_name.lower()}_dr', params)
-        if cached_result is not None: return cached_result
+        if cached_result is not None:
+            # Regenerate plots if they don't exist
+            self._ensure_plots_exist(cached_result, y_train)
+            return cached_result
     
         # Main
         start_log_index = len(self.ml_logger.current_logs)

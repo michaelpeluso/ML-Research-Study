@@ -9,9 +9,9 @@ from utils.data_processing import split_processed_data, wrap_into_loaders
 from utils.logger import MLLogger, print_t as print
 from utils.cache_manager import CacheManager
 from utils.plotter import plot_curve
-from nerual_networks.training import eval_loss, train_to_budget
-from nerual_networks.models import set_seed, MLP
-from nerual_networks.optimizers import optimizer_factory
+from neural_networks.training import eval_loss, train_to_budget
+from neural_networks.models import set_seed, MLP
+from neural_networks.optimizers import optimizer_factory
 
 
 def log_training_curves(
@@ -165,7 +165,9 @@ def _print_performance_comparison(
                 print(f"{dr_method.upper():<5} (n={n_comp:<3}): "
                       f"Test loss {improvement_indicator} {abs(test_loss_change):>5.2f}%, "
                       f"{abs(time_change):>5.1f}% {time_indicator}")
-def _plot_learning_curves(results, dr_methods, dataset, save_path, eval_interval=100):
+
+
+def _plot_learning_curves(results, dr_methods, dataset, save_path, eval_interval=100, max_updates=10000):
     """Plot individual and combined learning curves for Step 4."""
     os.makedirs(save_path, exist_ok=True)
     
@@ -201,8 +203,8 @@ def _plot_learning_curves(results, dr_methods, dataset, save_path, eval_interval
             xlabel="Training Updates", ylabel="Validation Loss",
             title=f"Step 4: {data['name']} Learning Curve on {dataset.title()}",
             save_path=f"{save_path}/{method}_learning_curve.png",
-            colors=[colors.get(method, '#333333')],
-            lower=data['q1'], upper=data['q3'], band_label='IQR (25th-75th percentile)'
+            colors=[colors.get(method, '#333333')], 
+            marker='',
         )
     
     # Combined curves
@@ -217,6 +219,7 @@ def _plot_learning_curves(results, dr_methods, dataset, save_path, eval_interval
             colors=[colors.get(all_methods[i], f'C{i}') for i in range(len(combined_data))],
             linestyles=['--'] + ['-'] * (len(combined_data) - 1),
             xlabel="Training Updates", ylabel="Validation Loss",
+            marker='',
             title=f"Step 4: Cumulative NN Learning Curves on {dataset.title()}",
             save_path=f"{save_path}/combined_learning_curves.png"
         )
@@ -268,6 +271,7 @@ def _train_nn_on_data(
     optimizer_kind: str,
     hidden_layers: List[int],
     max_updates: int,
+    eval_interval: int,
     learning_rate: float,
     betas: Tuple[float, float],
     weight_decay: float,
@@ -343,6 +347,7 @@ def train_neural_networks(
     optimizer: str,
     hidden_layers: List[int],
     max_updates: int,
+    eval_interval: int,
     learning_rate: float,
     betas: Tuple[float, float],
     weight_decay: float,
@@ -355,50 +360,6 @@ def train_neural_networks(
 ) -> Dict[str, Any]:
     """
     Unified neural network training function that handles any combination of data.
-    
-    Args:
-        X_data_dict: Dict mapping config names to X data. 
-                     e.g., {'original': X_original, 'pca': X_pca, 'ica': X_ica}
-        y_original: Target labels (same for all configurations)
-        config_info: Optional dict with metadata per config (e.g., {'pca': {'n_components': 5}})
-        step_name: Display name for this training run
-        
-    Returns:
-        Dict with keys from X_data_dict plus 'total_time'
-        
-    Example:
-        # Train on original only
-        results = train_neural_networks(
-            X_data_dict={'original': X_full}, 
-            y_original=y_full, ...
-        )
-        
-        # Train on DR methods only
-        results = train_neural_networks(
-            X_data_dict={
-                'pca': dr_results['pca']['X_transformed'],
-                'ica': dr_results['ica']['X_transformed'],
-                'rp': dr_results['rp']['X_transformed']
-            },
-            y_original=y_full,
-            config_info={
-                'pca': {'n_components': dr_results['pca']['n_components']},
-                'ica': {'n_components': dr_results['ica']['n_components']},
-                'rp': {'n_components': dr_results['rp']['n_components']}
-            },
-            ...
-        )
-        
-        # Train on both
-        results = train_neural_networks(
-            X_data_dict={
-                'original': X_full,
-                'pca': dr_results['pca']['X_transformed'],
-                'ica': dr_results['ica']['X_transformed'],
-                'rp': dr_results['rp']['X_transformed']
-            },
-            ...
-        )
     """
     start_time = time.perf_counter()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -415,7 +376,7 @@ def train_neural_networks(
     train_params = {
         'method': method, 'device': device, 'loss_fn': loss_fn,
         'seed': seed, 'batch_size': batch_size, 'optimizer_kind': optimizer,
-        'hidden_layers': hidden_layers, 'max_updates': max_updates,
+        'hidden_layers': hidden_layers, 'max_updates': max_updates, 'eval_interval': eval_interval,
         'learning_rate': learning_rate, 'betas': betas, 'weight_decay': weight_decay,
         'dropout_p': dropout_p, 'l_threshold': l_threshold,
         'label_smoothing_alpha': label_smoothing_alpha, 'activation': activation,
@@ -480,6 +441,7 @@ def run_neural_networks_on_original(
     optimizer: str,
     hidden_layers: List[int],
     max_updates: int,
+    eval_interval: int,
     learning_rate: float,
     betas: Tuple[float, float],
     weight_decay: float,
@@ -498,7 +460,7 @@ def run_neural_networks_on_original(
     # Check cache
     cache_params = {
         'seed': seed, 'method': method, 'batch_size': batch_size, 'optimizer': optimizer,
-        'hidden_layers': tuple(hidden_layers), 'max_updates': max_updates,
+        'hidden_layers': tuple(hidden_layers), 'max_updates': max_updates, 'eval_interval': eval_interval,
         'learning_rate': learning_rate, 'betas': betas, 'weight_decay': weight_decay,
         'dropout_p': dropout_p, 'l_threshold': l_threshold,
         'label_smoothing_alpha': label_smoothing_alpha, 'activation': activation,
@@ -523,6 +485,7 @@ def run_neural_networks_on_original(
         optimizer=optimizer,
         hidden_layers=hidden_layers,
         max_updates=max_updates,
+        eval_interval=eval_interval,
         learning_rate=learning_rate,
         betas=betas,
         weight_decay=weight_decay,
@@ -536,7 +499,7 @@ def run_neural_networks_on_original(
     
     # Log results
     hyperparameters = {
-        'batch_size': batch_size, 'max_updates': max_updates,
+        'batch_size': batch_size, 'max_updates': max_updates, 'eval_interval': eval_interval,
         'learning_rate': learning_rate, 'weight_decay': weight_decay,
         'hidden_layers': hidden_layers, 'activation': activation,
         'dropout': dropout_p, 'optimizer': optimizer, 'betas': betas, 'seed': seed
@@ -561,6 +524,7 @@ def run_neural_networks_on_reduced(
     optimizer: str,
     hidden_layers: List[int],
     max_updates: int,
+    eval_interval: int,
     learning_rate: float,
     betas: Tuple[float, float],
     weight_decay: float,
@@ -579,7 +543,7 @@ def run_neural_networks_on_reduced(
     # Check cache
     cache_params = {
         'seed': seed, 'method': method, 'batch_size': batch_size, 'optimizer': optimizer,
-        'hidden_layers': tuple(hidden_layers), 'max_updates': max_updates,
+        'hidden_layers': tuple(hidden_layers), 'max_updates': max_updates, 'eval_interval': eval_interval,
         'learning_rate': learning_rate, 'betas': betas, 'weight_decay': weight_decay,
         'dropout_p': dropout_p, 'l_threshold': l_threshold,
         'label_smoothing_alpha': label_smoothing_alpha, 'activation': activation,
@@ -617,6 +581,7 @@ def run_neural_networks_on_reduced(
         optimizer=optimizer,
         hidden_layers=hidden_layers,
         max_updates=max_updates,
+        eval_interval=eval_interval,
         learning_rate=learning_rate,
         betas=betas,
         weight_decay=weight_decay,
@@ -630,11 +595,6 @@ def run_neural_networks_on_reduced(
     
     # Summary and visualization
     _print_performance_comparison(results, dr_methods)
-    
-    print("\n" + "="*80)
-    print("STEP 4b: Generating Learning Curve Visualizations")
-    print("="*80)
-    _plot_learning_curves(results, dr_methods, dataset, save_path, eval_interval=100)
     
     # Log results
     hyperparameters = {
@@ -663,6 +623,7 @@ def run_neural_networks_on_data(
     optimizer: str,
     hidden_layers: List[int],
     max_updates: int,
+    eval_interval: int,
     learning_rate: float,
     betas: Tuple[float, float],
     weight_decay: float,
@@ -685,20 +646,26 @@ def run_neural_networks_on_data(
     # Train on original
     original_results = run_neural_networks_on_original(
         X_original, y_original, dataset, method, save_path, ml_logger, seed,
-        batch_size, optimizer, hidden_layers, max_updates, learning_rate, betas,
+        batch_size, optimizer, hidden_layers, max_updates, eval_interval, learning_rate, betas,
         weight_decay, dropout_p, l_threshold, label_smoothing_alpha, activation
     )
     
     # Train on reduced
     reduced_results = run_neural_networks_on_reduced(
         X_original, y_original, dataset, method, save_path, ml_logger, seed, dr_results,
-        batch_size, optimizer, hidden_layers, max_updates, learning_rate, betas,
+        batch_size, optimizer, hidden_layers, max_updates, eval_interval, learning_rate, betas,
         weight_decay, dropout_p, l_threshold, label_smoothing_alpha, activation
     )
     
     # Merge results
     results = {**original_results, **reduced_results}
     results['total_time'] = time.perf_counter() - start_time
+    
+    # Generate combined learning curves
+    print("\n" + "="*80)
+    print("STEP 4: Generating Combined Learning Curve Visualizations")
+    print("="*80)
+    _plot_learning_curves(results, ['pca', 'ica', 'rp'], dataset, save_path, eval_interval=eval_interval, max_updates=max_updates)
     
     print("="*80)
     print(f"STEP 4 completed in {results['total_time']:.2f}s")
