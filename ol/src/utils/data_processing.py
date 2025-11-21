@@ -1,0 +1,287 @@
+import os
+import joblib
+import numpy as np
+import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import StandardScaler
+from sklearn.impute import SimpleImputer
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from category_encoders import CountEncoder, TargetEncoder
+import torch
+from torch.utils.data import TensorDataset, DataLoader
+
+# load data from cache if available
+def load_or_process_data(dataset: str, target: str, method: str, subsample: float, seed: int, cache_dir="", test_size=0.2, val_size=0.2
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, pd.Series, dict]:
+    if not cache_dir:
+        cache_dir = os.path.join(os.environ['ROOT'], "cache")
+    hotels_path = os.path.join(os.environ['ROOT'], f"data/hotel_bookings.csv")
+    accidents_path = os.path.join(os.environ['ROOT'], f"data/US_Accidents_March23_1M_rows.csv")
+
+    print(f"Loading {dataset} data.")
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_file = os.path.join(cache_dir, f"{dataset}_subsample_{int(subsample*100)}.pkl")
+    col_log_data = {}
+
+    if os.path.exists(cache_file):
+        # load data from cache if available
+        X_train, X_val, X_test, y_train, y_val, y_test = joblib.load(cache_file)
+        total_cleaned = total_rows = len(X_train) + len(X_val) + len(X_test)
+
+        def get_mem_mb(arr):
+            return arr.memory_usage(deep=True) if hasattr(arr, "memory_usage") else arr.nbytes
+        mem_before = mem_after = (get_mem_mb(X_train) + get_mem_mb(X_val) + get_mem_mb(X_test) + get_mem_mb(y_train) + get_mem_mb(y_val) + get_mem_mb(y_test)) / (1024**2)
+
+    else:
+        # load raw data
+        df = pd.DataFrame()
+        df = pd.read_csv(hotels_path if dataset == "hotels" else accidents_path)
+        if len(df) == 0:
+            raise ValueError(f"Dataset {dataset} is empty or not found.")
+        
+        # subsample
+        df = subsample_dataset(df, target, subsample, seed, method)
+        total_rows = len(df)
+
+        # clean
+        print(f"Cleaning {dataset} data.")
+        mem_before = df.memory_usage(deep=True).sum() / (1024 ** 2)
+        cleaned_df = clean_hotels(df) if dataset == "hotels" else clean_accidents(df)
+        cleaned_df = general_clean(cleaned_df, target)
+        total_cleaned = len(cleaned_df)
+        if method == "regression": 
+            cleaned_df['Duration_Seconds'] = np.log1p(cleaned_df['Duration_Seconds']) # log(1 + x) to handle zeros/small values
+        mem_after = cleaned_df.memory_usage(deep=True).sum() / (1024 ** 2)
+
+        # Split into train/val/test sets
+        X = cleaned_df.drop(columns=[target])
+        y = cleaned_df[target]
+        X_temp, X_test, y_temp, y_test = train_test_split(X, y, test_size=test_size, random_state=seed, stratify=(y if method == "classification" else None)) # train/test split
+        X_train, X_val, y_train, y_val = train_test_split(X_temp, y_temp, test_size=val_size/(1-test_size), random_state=seed, stratify=(y_temp if method=="classification" else None)) # second split temp into train and val
+        # transform columns types (cardinality)
+        X_train, X_val, X_test, col_log_data = transform_columns(dataset, X_train, X_val, X_test, y_train)
+
+        # cache data
+        joblib.dump((X_train, X_val, X_test, y_train, y_val, y_test), cache_file)
+        print(f"Saved processed dataset to {cache_file}")
+
+    info = { # data for logging
+        'used_cached_df' : os.path.exists(cache_file),
+        'n_loaded_rows': total_rows, 
+        'n_cleaned_rows': total_cleaned,
+        'train_shape': f"{X_train.shape[0]} samples x {X_train.shape[1]} features",
+        'validation_shape': f"{X_val.shape[0]} samples x {X_val.shape[1]} features",
+        'test_shape': f"{X_test.shape[0]} samples x {X_test.shape[1]} features",
+        'split_pct': {'train': len(X_train)//total_rows, 'val': len(X_val)//total_rows, 'test': len(X_test)//total_rows},
+        'target_distribution': y_train.value_counts().to_dict() if 'classification' in method.lower() else None,
+        'memory_before_clean': "Used cashed memory" if mem_before==mem_after else f"{mem_before} MB",
+        'memory_after_clean': f"{mem_after} MB",
+        'memory_reduction': f"{round((mem_before - mem_after) / mem_before * 100, 2)}%" if mem_before==mem_after else "0%",
+    }
+    info.update(col_log_data)
+
+    return X_train, X_val, X_test, y_train, y_val, y_test, info
+
+
+def wrap_into_loaders(method, X_train, X_val, X_test, y_train, y_val, y_test, batch_size) -> tuple[DataLoader, DataLoader, DataLoader]:
+    # https://edstem.org/us/courses/81923/discussion/6999408
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    y_dtype = torch.float if 'regression' in method.lower() else torch.long
+    
+    X_train_tensor = torch.tensor(X_train, dtype=torch.float32, device=device)
+    X_val_tensor = torch.tensor(X_val, dtype=torch.float32, device=device)
+    X_test_tensor = torch.tensor(X_test, dtype=torch.float32, device=device)
+
+    y_train_tensor = torch.tensor(y_train.values if hasattr(y_train, 'values') else y_train, dtype=y_dtype, device=device)
+    y_val_tensor = torch.tensor(y_val.values if hasattr(y_val, 'values') else y_val, dtype=y_dtype, device=device)
+    y_test_tensor = torch.tensor(y_test.values if hasattr(y_test, 'values') else y_test, dtype=y_dtype, device=device)
+
+    train_loader = DataLoader(TensorDataset(X_train_tensor, y_train_tensor), batch_size=batch_size, shuffle=True, drop_last=False)
+    val_loader = DataLoader(TensorDataset(X_val_tensor, y_val_tensor), batch_size=batch_size, shuffle=False)
+    test_loader = DataLoader(TensorDataset(X_test_tensor, y_test_tensor), batch_size=batch_size, shuffle=False)
+
+    return train_loader, val_loader, test_loader
+
+
+def transform_columns(dataset, X_train, X_val, X_test, y_train) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
+    # transform columns types (cardinality)
+    numeric_cols = X_train.select_dtypes(include=["float", "int"]).columns.tolist()
+    categorical_cols = X_train.select_dtypes(include=["category", "object"]).columns.tolist()
+    high_card_cols = []
+
+    if dataset == "hotels":
+        high_card_cols = [c for c in [
+        "country", 
+        "agent", 
+        "company"
+        ] if c in X_train.columns]
+    
+    elif dataset == "accidents":
+        high_card_cols = [c for c in [
+        "Street", 
+        "County", 
+        "City", 
+        "Zipcode", 
+        "Airport_Code",
+        # "Wind_Direction", # not enough variation
+        # "Weather_Condition", # not enough variation
+        ] if c in X_train.columns]
+
+    # Build column transformer
+    num_pipeline = Pipeline([
+        ("imputer", SimpleImputer(strategy="median")),
+        ("scaler", StandardScaler(with_mean=True, with_std=True))
+    ])
+    cat_pipeline = Pipeline([
+        ("imputer", SimpleImputer(strategy="most_frequent")),
+        ("encoder", TargetEncoder()),
+        ("scaler", StandardScaler(with_mean=True, with_std=True))
+    ])
+    freq_pipeline = Pipeline([
+        ("imputer", SimpleImputer(strategy="constant", fill_value=0)),
+        ("encoder", CountEncoder()),
+        ("scaler", StandardScaler(with_mean=True, with_std=True))
+    ])
+
+    transformers = [("num", num_pipeline, numeric_cols)]
+    low_med_card_cols = [c for c in categorical_cols if c not in high_card_cols] if high_card_cols else categorical_cols
+    if low_med_card_cols:
+        transformers.append(("cat", cat_pipeline, low_med_card_cols))
+    if high_card_cols:
+        transformers.append(("freq", freq_pipeline, high_card_cols))
+
+    # build and fit preprocessor on X_train
+    preprocessor = ColumnTransformer(transformers, remainder="drop")
+    X_train = preprocessor.fit_transform(X_train, y_train)
+    X_val = preprocessor.transform(X_val)
+    X_test = preprocessor.transform(X_test)
+
+    log_data = {
+        'numeric_features': len(numeric_cols),
+        'categorical_features': len(categorical_cols),
+        'high_cardinality_features': len(high_card_cols) if high_card_cols else 0,
+    }
+    
+    return X_train, X_val, X_test, log_data # type: ignore
+
+
+# clean either dataset
+def general_clean(df, target):
+    # missing target, duplicates, leakage, and missing values
+    df = df.dropna(subset=[target])
+    df = df.drop_duplicates()
+    df = df.dropna(axis=1, thresh=(len(df) * 0.7))
+
+    # downcast numeric types
+    for col in df.select_dtypes(include=["int64"]).columns:
+        df[col] = pd.to_numeric(df[col], downcast="integer")
+    for col in df.select_dtypes(include=["float64"]).columns:
+        df[col] = pd.to_numeric(df[col], downcast="float")
+
+    # convert low-cardinality objects to category
+    for col in df.select_dtypes(include=["object"]).columns:
+        if df[col].nunique() / len(df) < 0.5:
+            df[col] = df[col].astype("category")
+    
+    return df
+
+
+
+# user selected dataset with specific drops
+def clean_hotels(df):
+    df = df.drop(columns=[
+        "reservation_status", # given
+        "reservation_status_date" # given
+        ], errors="ignore")
+
+    return df
+
+def clean_accidents(df) :
+    df['Zipcode'] = df['Zipcode'].astype(str).str[:5] # truncate to 5 digits
+    
+    # derive times
+    df['Start_Time'] = pd.to_datetime(df['Start_Time'], errors='coerce') 
+    df['End_Time'] = pd.to_datetime(df['End_Time'], errors='coerce')
+    df['Start_Hour'] = df['Start_Time'].dt.hour.astype('int32')  # 0-23
+    df['Start_DayOfWeek'] = df['Start_Time'].dt.dayofweek.astype('int32')  # 0-6
+    df['Start_Month'] = df['Start_Time'].dt.month.astype('int32')  # 1-12
+    df['Is_Weekend'] = (df['Start_DayOfWeek'] >= 5).astype('int32')  # binary flag
+    df['Is_Rush_Hour'] = df['Start_Hour'].isin([7,8,9,16,17,18]).astype('int32')  # binary flag
+
+    # derive duration
+    df['Duration_Seconds'] = (df['End_Time'] - df['Start_Time']).dt.total_seconds()
+    df = df[(df['Duration_Seconds'] > 0) & (df['Duration_Seconds'] <= df['Duration_Seconds'].quantile(0.95))]
+    df['Duration_Seconds'] = df['Duration_Seconds'].astype('float32')
+    df = df.drop(columns=['Start_Time', 'End_Time'])
+
+    # categorize Weather_Condition
+    def categorize_weather(cond):
+        if pd.isna(cond): return 0
+        cond = cond.lower()
+        if 'clear' in cond or 'fair' in cond or 'cloud' in cond or 'overcast' in cond: return 1  # safe
+        elif 'mist' in cond or 'haze' in cond or 'drizzle' in cond: return 2  # mild
+        elif 'rain' in cond or 'shower' in cond: return 3  # moderate
+        elif 'snow' in cond or 'sleet' in cond: return 4  # severe
+        elif 'fog' in cond or 'thunder' in cond or 'storm' in cond: return 5  # very severe
+        else: return 6
+    df['Weather_Category'] = df['Weather_Condition'].apply(categorize_weather).astype('int32')
+
+    # Wind_Direction to numeric
+    wind_map = {'Calm': 0, 'N': 0, 'NNE': 22.5, 'NE': 45, 'ENE': 67.5, 'E': 90, 'ESE': 112.5,
+                'SE': 135, 'SSE': 157.5, 'S': 180, 'SSW': 202.5, 'SW': 225, 'WSW': 247.5,
+                'W': 270, 'WNW': 292.5, 'NW': 315, 'NNW': 337.5, 'VAR': 0, 'Variable': 0}
+    df['Wind_Angle'] = df['Wind_Direction'].map(wind_map).fillna(0).astype('float32')
+    
+    df = df.drop(columns=[
+        "End_Time", # given
+        "Weather_Timestamp", # given 
+        "Weather_Condition", # converted to numeric range
+        "Wind_Direction", # converted to numeric range
+        "ID", # completely unique - no info
+        "Source", # doesnt offer any info unless sources have a bias
+        "Description",  # completely unique - no info
+        "Country", # all USA
+        "Turning_Loop", # all are False
+        "Start_Time", # derived
+        "Bumper", # 99% are False
+        "Roundabout", # 99% are False
+        "Traffic_Calming", # ~100% are False
+        ], errors="ignore")
+    
+    return df
+
+def split_dataset(df: pd.DataFrame, target: str, method:str, test_size, val_size, seed=1):
+    print("Generating test/train/validation data splits.")
+    # test/train/val split
+    X = df.drop(columns=[target])
+    y = df[target]
+
+    # even class proportion between test/train sets
+    stratify = y if method == "classification" else None
+    
+    # split off test set
+    X_train_val, X_test, y_train_val, y_test = train_test_split(
+        X, y, test_size=test_size, stratify=stratify, random_state=seed
+    )
+
+    # split train_val into train and val
+    stratify_train_val = y_train_val if method == "classification" else None
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_train_val, y_train_val, test_size=val_size, stratify=stratify_train_val, random_state=seed
+    )
+
+    return  X_train, X_val, X_test, y_train, y_val, y_test
+    
+
+# cut the data into a smaller sample
+def subsample_dataset(df: pd.DataFrame, target: str, subsample_frac: float, seed: int, method: str):
+    if subsample_frac < 1.0:
+        if 'regression' in method.lower():
+            # random sample for regression
+            df = df.sample(frac=subsample_frac, random_state=seed).reset_index(drop=True)
+        else:
+            df = df.groupby(target, group_keys=False).apply(
+                lambda x: x.sample(frac=subsample_frac, random_state=seed)
+            ).reset_index(drop=True)
+    return df
