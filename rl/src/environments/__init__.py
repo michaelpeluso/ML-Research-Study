@@ -1,2 +1,2 @@
 # AI Use Statement: package initialization structure created with GitHub Copilot assistance
-"""Experiment runner scripts"""
+"""Environment wrappers and discretizers for Blackjack and CartPole"""

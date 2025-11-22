@@ -1,2 +1,2 @@
 # AI Use Statement: package initialization structure created with GitHub Copilot assistance
-"""Experiment runner scripts"""
+"""Utility functions: seeding, logging, plotting"""

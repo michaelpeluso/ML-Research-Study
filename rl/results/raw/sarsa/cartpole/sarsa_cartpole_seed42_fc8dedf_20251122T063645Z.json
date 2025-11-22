@@ -1,0 +1,60 @@
+{
+  "algorithm": "sarsa",
+  "alpha": 0.1,
+  "commit_sha": "fc8dedf",
+  "created_at_utc": "2025-11-22T06:36:45.315025Z",
+  "duration_sec": 0.1138296127319336,
+  "env": {
+    "action_space_n": 2,
+    "command": "src/experiments/sarsa_cartpole.py --seed 42 --episodes 100",
+    "discretizer_bins": [
+      3,
+      3,
+      8,
+      12
+    ],
+    "num_discrete_states": 864,
+    "observation_space_high": [
+      4.800000190734863,
+      3.4028234663852886e+38,
+      0.41887903213500977,
+      3.4028234663852886e+38
+    ],
+    "observation_space_low": [
+      -4.800000190734863,
+      -3.4028234663852886e+38,
+      -0.41887903213500977,
+      -3.4028234663852886e+38
+    ],
+    "observation_space_shape": [
+      4
+    ]
+  },
+  "environment": "CartPole-v1",
+  "episodes": 100,
+  "epsilon": 0.1,
+  "experiment_name": "sarsa_cartpole",
+  "gamma": 0.99,
+  "seed": 42,
+  "summary": {
+    "episode_return_max": 14.0,
+    "episode_return_mean": 9.97,
+    "episode_return_median": 10.0,
+    "episode_return_min": 8.0,
+    "episode_return_std": 1.195449706177554,
+    "last_100_mean": 9.97
+  },
+  "system": {
+    "packages": {
+      "gymnasium": "0.29.1",
+      "matplotlib": "3.10.7",
+      "numpy": "1.26.4",
+      "pandas": "2.2.0",
+      "pyyaml": "6.0.1",
+      "seaborn": "0.13.0",
+      "torch": "not-installed"
+    },
+    "platform": "Windows-11-10.0.26100-SP0",
+    "python_version": "3.12.4 (tags/v3.12.4:8e8a4ba, Jun  6 2024, 19:30:16) [MSC v.1940 64 bit (AMD64)]"
+  }
+}

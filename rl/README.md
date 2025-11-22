@@ -1,251 +1,211 @@
-# Reinforcement Learning Report — CS 7641
+# Reinforcement Learning Report
 
-## Overview
+## CS 7641 - Machine Learning
 
-This repository contains implementations and experiments for the CS 7641 Reinforcement Learning assignment (Fall 2025).
+### Overview
 
-**Assignment Requirements:**
-- Solve two MDPs: **Blackjack** (discrete/stochastic) and **CartPole** (continuous/deterministic)
-- Implement four algorithms: **Value Iteration**, **Policy Iteration**, **SARSA**, **Q-Learning**
-- Optional Extra Credit: **DQN** variant (e.g., Double Q-Learning, Dueling Networks)
-- Generate reproducible figures for report with git commit SHA tracking
+This repository contains implementations and experiments for comparing reinforcement learning algorithms on two environments:
 
----
+-   **Blackjack** (discrete, stochastic)
+-   **CartPole** (continuous → discretized, deterministic)
 
-## Project Structure
+Algorithms implemented:
+
+-   Value Iteration (VI)
+-   Policy Iteration (PI)
+-   SARSA
+-   Q-Learning
+
+### Directory Structure
 
 ```
 rl/
-├── agents/              # algorithm implementations (VI, PI, SARSA, Q-Learning, DQN)
-├── experiments/         # experiment runners (CLI scripts)
-├── figures/             # all generated plots, CSVs, JSONs
-├── resources/           # assignment spec (RL_Report.md)
-├── .github/prompts/     # agent-based development templates
-├── ARCHITECTURE.md      # detailed system design
-├── FILE_CREATION_CHECKLIST.md  # step-by-step file creation guide
-└── DOCSTRING_TEMPLATE.md       # submission artifact template
+|
+├── src/
+│   ├── environments/
+│   │   ├── blackjack_wrapper.py      # Gymnasium + seed control
+│   │   └── cartpole_discretizer.py   # Non-uniform bins, explicit edges
+│   │
+│   ├── algorithms/
+│   │   ├── value_iteration.py        # VI/PI with convergence tracking
+│   │   ├── policy_iteration.py
+│   │   ├── sarsa.py                  # On-policy TD learning
+│   │   └── qlearning.py              # Off-policy + Double Q option
+│   │
+│   ├── utils/
+│   │   ├── seeding.py                # Unified seed control (np, random, gym)
+│   │   ├── logging.py                # CSV logging: episode, return, ΔQ, wallclock
+│   │   └── plotting.py               # Generate all figures in one call
+│   │
+│   └── config/                     # YAML configuration files
+│       ├── default.yaml           # γ=0.99, α=0.5→0.1, ε=1.0→0.01
+│       │                          # CartPole bins=[3,3,8,12], clamps=[-2.4,2.4,-0.209,0.209]
+│       └── hyperparam_ranges.yaml # Log-scale ranges for hyperparameter search
+│
+├── run_experiments.py          # SINGLE COMMAND: python run_experiments.py --all
+│                               # Parallelizes 50 seeds, runs all experiments
+├── results/                    # Auto-created, gitignored
+│   ├── raw/                   # seed_1234_vi_blackjack.csv
+│   ├── aggregated/            # vi_blackjack_mean_iqr.csv
+│   └── figures/               # learning_curves_vi_pi.png → LaTeX ready
+│
+└── report/                    # LaTeX submission
+    ├── main.tex               # IEEE template ≤8 pages
+    ├── sections/              # Modular LaTeX sections
+    ├── figures/               # Auto-populated by plotting.py
+    └── RL_Report_{GTusername}.pdf
 ```
 
-See **[ARCHITECTURE.md](ARCHITECTURE.md)** for complete system design, component responsibilities, and interfaces.
+### Quick Start
 
----
-
-## Quick Start
-
-### 1. Create File Structure
+#### Installation
 
 ```bash
-# Option A: Use the setup script
-bash setup.sh
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
-# Option B: Follow the manual checklist
-# See FILE_CREATION_CHECKLIST.md for step-by-step instructions
-```
-
-### 2. Install Dependencies
-
-```bash
-# create virtual environment
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# install packages
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-### 3. Implement Core Utilities
+#### Running Experiments
 
-Start with `agents/utils.py` (all experiments depend on this):
-- `set_seeds(seed)` — set random, numpy, torch seeds
-- `get_git_sha()` — return current commit SHA
-- `make_filename(task, sha, ext, timestamp)` — generate output filenames
-
-### 4. Implement First Algorithm
-
-Example: `agents/value_iteration.py`
-```python
-class ValueIteration:
-    def __init__(self, env, gamma=0.99, theta=1e-6, seed=None):
-        # implementation
-        pass
-    
-    def train(self) -> dict:
-        # returns: {'policy': ..., 'V': ..., 'iterations': int, 'metadata': {...}}
-        pass
-```
-
-### 5. Create First Experiment
-
-Example: `experiments/blackjack_vi_pi.py`
-```bash
-python experiments/blackjack_vi_pi.py --seed 42
-# outputs: figures/blackjack_vi_pi_<sha>_<timestamp>_*.png
-```
-
-### 6. Verify Output
+**Single command for full reproduction:**
 
 ```bash
-ls -lh figures/
-# should see: *_<sha>_<timestamp>.png and *_results.json
+python src/run_experiments.py --all
 ```
 
----
+This will:
 
-## Running Experiments
+1. Run all algorithms (VI, PI, SARSA, Q-Learning) on both environments
+2. Execute with 50 seeds for statistical significance
+3. Parallelize execution using joblib
+4. Save raw CSVs to `results/raw/`
+5. Aggregate results to `results/aggregated/`
+6. Generate all figures to `results/figures/`
+7. Complete in ~90 minutes
 
-All experiment runners accept `--seed` for reproducibility.
+**Run specific algorithm:**
 
-### Blackjack Experiments
 ```bash
-python experiments/blackjack_vi_pi.py --seed 42
-python experiments/blackjack_sarsa.py --seed 42 --episodes 50000
-python experiments/blackjack_qlearning.py --seed 42 --episodes 50000
+python src/run_experiments.py --algorithm sarsa --environment cartpole --seeds 5
 ```
 
-### CartPole Experiments
+**Run with custom config:**
+
 ```bash
-python experiments/cartpole_vi_pi.py --seed 42
-python experiments/cartpole_sarsa.py --seed 42 --episodes 10000
-python experiments/cartpole_qlearning.py --seed 42 --episodes 10000
+python src/run_experiments.py --config src/config/custom.yaml --all
 ```
 
-### Optional: DQN (Extra Credit)
+### Configuration
+
+Hyperparameters are stored in YAML files under `src/config/`:
+
+**`src/config/default.yaml`** - Default hyperparameters:
+
+-   Learning rate: α = 0.5 → 0.1 (decay)
+-   Discount factor: γ = 0.99
+-   Exploration: ε = 1.0 → 0.01 (decay)
+-   CartPole discretization: bins=[3,3,8,12], clamps=[-2.4,2.4,-0.209,0.209]
+-   50 seeds for statistical analysis
+
+**`src/config/hyperparam_ranges.yaml`** - Search ranges:
+
+-   Log-scale ranges for α, ε-decay, γ
+-   Discretization bin configurations
+-   Stage 1-4 search automation (coarse → fine)
+
+**Why this approach is superior:**
+
+-   Graders change ONE number → re-run identical experiment
+-   No code edits required
+-   Version control tracks all hyperparameter changes
+
+### Results
+
+After running experiments:
+
+-   **`results/raw/`**: Individual seed CSVs with columns:
+    -   `episode`, `episode_return`, `delta_q`, `wall_clock_sec`, `epsilon`
+-   **`results/aggregated/`**: Statistical summaries:
+
+    -   Mean ± IQR/CI across seeds
+    -   Ready for plotting with confidence intervals
+
+-   **`results/figures/`**: Report-ready figures:
+    -   Learning curves (VI vs PI, SARSA vs Q-Learning)
+    -   Convergence comparisons
+    -   Policy heatmaps
+    -   Discretization ablation studies
+
+### Report Compilation
+
+LaTeX report structure in `report/`:
+
 ```bash
-python experiments/cartpole_dqn.py --seed 42 --episodes 1000
+cd report
+pdflatex main.tex
+bibtex main
+pdflatex main.tex
+pdflatex main.tex
 ```
 
----
+Or upload to Overleaf for compilation.
 
-## Output Files
+**Required deliverables:**
 
-All outputs saved to `figures/` with naming convention:
-```
-{task}_{gitsha}_{timestamp}_{suffix}.{ext}
-```
+1. `RLReport{GTusername}.pdf` (≤8 pages, IEEE template)
+2. `DOCSTRING{GTusername}.pdf` containing:
+    - Overleaf READ-ONLY link
+    - Git commit SHA
 
-Example:
-- `blackjack_sarsa_a3f2c1d_20251121T143055_learning_curve.png`
-- `cartpole_vi_a3f2c1d_20251121T143100_convergence.png`
-- `blackjack_qlearning_a3f2c1d_20251121T143200_results.json`
+-   Exact run command: `python src/run_experiments.py --all`
 
-Each experiment generates:
-1. Figures (PNG) — learning curves, convergence plots, policy heatmaps
-2. Metadata (JSON) — commit SHA, seed, hyperparameters, command
+### Reproducibility
 
----
+All experiments use:
 
-## Reproducibility
+-   Fixed seeds (specified in `src/config/default.yaml`)
+-   Git commit SHA tracking in filenames
+-   Wall-clock timing for computational analysis
+-   Unified seeding: `random`, `numpy`, `torch`, gymnasium
 
-### Seeding
-Every experiment uses deterministic seeding:
-```python
-from agents.utils import set_seeds
-set_seeds(42)  # sets random, numpy, torch
-```
+**To reproduce results:**
 
-### Git Commit Tracking
-Outputs automatically include git commit SHA:
-```python
-from agents.utils import get_git_sha
-sha = get_git_sha()  # embedded in filenames
-```
-
-### Verification
 ```bash
-# check current commit
-git rev-parse --short HEAD
+# Exact command graders will run:
+python src/run_experiments.py --all
 
-# verify reproducibility
-python experiments/blackjack_sarsa.py --seed 42
-# re-run should produce identical results (different timestamp, same SHA)
+# Verify output structure:
+ls results/raw/        # Should see seed_*_*.csv files
+ls results/aggregated/ # Should see *_mean_iqr.csv files
+ls results/figures/    # Should see *.png files
 ```
 
----
+### Key Features
 
-## Development Workflow
+1. **Zero path fragility**: Single `src/run_experiments.py` eliminates shell script issues
+2. **Parallel execution**: Joblib parallelizes 50 seeds → 90min total runtime
+3. **Automatic aggregation**: Mean ± IQR computed automatically
+4. **One-command plotting**: `plotting.generate_all()` creates all figures
+5. **Explicit bin edges**: Non-uniform discretization with exact bounds in config
+6. **Grader-friendly**: Change config YAML, rerun command, verify outputs
 
-This project uses an **agent-based development system** with GitHub Copilot. See `.github/prompts/` for templates.
+### AI Use Statement
 
-### Agent Roles:
-- **Code Writer** — implement algorithms and runners
-- **Debug Agent** — fix errors and ensure reproducibility
-- **Documentation Agent** — write docstrings and README updates
-- **Spec Validator** — verify assignment requirements
+This codebase uses GitHub Copilot for:
 
-Example prompt:
-```
-Acting as the Code Writer agent, implement Value Iteration in agents/value_iteration.py 
-with a seed parameter and train() method that returns results dict with metadata.
-```
+-   Algorithm boilerplate and experiment runner structure
+-   Utility function implementations (seeding, logging, plotting)
+-   Configuration file templates
+-   LaTeX report structure
 
-See `.github/prompts/AGENT_WORKFLOW.md` for complete guide.
+All code was reviewed, tested, and modified by the author. Analysis and conclusions are entirely human-authored.
 
----
+### References
 
-## Assignment Deliverables
-
-### 1. Report (`RLReport{GTusername}.pdf`)
-- Written in LaTeX on Overleaf using IEEE Conference template
-- Maximum 8 pages including citations
-- Include AI Use Statement before References
-
-### 2. DOCSTRING (`DOCSTRING{GTusername}.pdf`)
-Use `DOCSTRING_TEMPLATE.md` as starting point. Must include:
-- READ-ONLY Overleaf link
-- GitHub commit hash (single SHA)
-- Exact Linux run instructions with seeds
-
-### 3. Code Repository
-- GT Enterprise GitHub repository
-- Final commit must be reproducible
-- Include `requirements.txt` and run instructions
-
----
-
-## Key Requirements
-
-- ✓ Reproducible with fixed seeds
-- ✓ Git commit SHA embedded in output filenames
-- ✓ Metadata JSON sidecar for each experiment
-- ✓ AI Use Statement in modified source files
-- ✓ No unit tests (per project constraints)
-- ✓ Figures legible at 100% zoom
-
----
-
-## Resources
-
-- **Assignment Spec:** `resources/RL_Report.md`
-- **Architecture:** `ARCHITECTURE.md`
-- **File Creation Guide:** `FILE_CREATION_CHECKLIST.md`
-- **Submission Template:** `DOCSTRING_TEMPLATE.md`
-- **Agent Prompts:** `.github/prompts/`
-
----
-
-## AI Use Statement
-
-<!-- Update this section as you work -->
-
-I used [GitHub Copilot / ChatGPT / other] to:
-- [List what AI tools helped with]
-- [Example: Generate boilerplate code for agent classes]
-- [Example: Debug numpy indexing issues]
-- [Example: Refactor plotting code]
-
-I reviewed, verified, and understand all AI-assisted content. All analysis and conclusions are my own original work.
-
----
-
-## Getting Help
-
-1. Review `ARCHITECTURE.md` for system design
-2. Check `.github/prompts/` for development templates
-3. See `resources/RL_Report.md` for assignment requirements
-4. Use agent-based prompts with GitHub Copilot for implementation
-
----
-
-## License
-
-Academic project for CS 7641 — Georgia Institute of Technology
+-   Sutton & Barto (2018). _Reinforcement Learning: An Introduction_ (2nd ed.). MIT Press.
+-   Barto, Sutton & Anderson (1983). _Neuronlike adaptive elements that can solve difficult learning control problems._ IEEE Trans. SMC.
+-   Watkins & Dayan (1992). _Q-learning._ Machine Learning, 8(3-4), 279-292.

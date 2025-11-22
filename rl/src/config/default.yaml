@@ -1,0 +1,37 @@
+# AI Use Statement: default configuration created with GitHub Copilot assistance
+# default hyperparameters for all algorithms and environments
+
+# global settings
+seeds: [0, 1, 2, 3, 4] # multiple seeds for statistical analysis
+num_episodes: 10000
+
+# algorithm hyperparameters
+sarsa:
+    alpha: 0.1 # learning rate
+    gamma: 0.99 # discount factor
+    epsilon: 0.1 # exploration rate
+
+q_learning:
+    alpha: 0.1
+    gamma: 0.99
+    epsilon: 0.1
+
+value_iteration:
+    gamma: 0.99
+    theta: 1.0e-6 # convergence threshold
+
+policy_iteration:
+    gamma: 0.99
+    theta: 1.0e-6
+
+# environment-specific settings
+blackjack:
+    natural: false # natural blackjack pays 1.5x
+    sab: false # stick-and-bust variant
+
+cartpole:
+    # discretization bins per dimension: [x, x_dot, theta, theta_dot]
+    bins: [3, 3, 8, 12]
+    # state space bounds (clip infinite values)
+    low: [-2.4, -3.0, -0.209, -3.0]
+    high: [2.4, 3.0, 0.209, 3.0]

@@ -1,2 +1,2 @@
 # AI Use Statement: package initialization structure created with GitHub Copilot assistance
-"""Experiment runner scripts"""
+"""RL algorithms: Value Iteration, Policy Iteration, SARSA, Q-Learning"""
