@@ -1,4 +1,4 @@
-# AI Use Statement: SARSA algorithm created with GitHub Copilot assistance
+"""SARSA algorithm implementation"""
 """sarsa on-policy td learning"""
 import numpy as np
 from typing import Optional, Dict, Any, Set
@@ -8,7 +8,12 @@ import gymnasium as gym
 def compute_entropy(probs: np.ndarray) -> float:
     """compute shannon entropy of probability distribution"""
     probs = probs[probs > 0]  # filter zeros
-    return float(-np.sum(probs * np.log(probs)))
+    if len(probs) == 0:
+        return 0.0
+
+    # amount of information needed to describe the outcome (measures randomness)
+    # shannon entropy: H(p) = - sum_i p_i * log(p_i)
+    return float(np.sum(-probs * np.log(probs)))
 
 
 class SARSA:
@@ -53,11 +58,13 @@ class SARSA:
     
     def choose_action(self, state) -> int:
         """epsilon-greedy action selection"""
+        # sample from environment action space
+        # exploratory action: P(explore) = ε
         if np.random.random() < self.epsilon:
             return self.env.action_space.sample()
         
-        # greedy action
-        q_values = [self.get_q_value(state, a) for a in range(self.env.action_space.n)]
+        # greedy action: argmax_a Q(s,a)
+        q_values = [self.get_q_value(state, a) for a in range(self.env.action_space.n)]  # type: ignore
         return int(np.argmax(q_values))
     
     def train(self) -> Dict[str, Any]:
@@ -90,7 +97,7 @@ class SARSA:
             td_errors_list = []
             q_changes_list = []
             unique_states: Set = set()
-            action_counts = np.zeros(self.env.action_space.n)
+            action_counts = np.zeros(self.env.action_space.n)  # type: ignore
             
             done = False
             while not done:
@@ -98,7 +105,8 @@ class SARSA:
                 unique_states.add(state)
                 action_counts[action] += 1
                 
-                # track exploration
+                # track exploration indicator for this step
+                # bernoulli trial: I_explore = 1 if U(0,1) < ε
                 if np.random.random() < self.epsilon:
                     explorations += 1
                 
@@ -109,16 +117,22 @@ class SARSA:
                 if isinstance(next_state, np.ndarray):
                     next_state = tuple(next_state)
                 
-                episode_return += reward
+                episode_return += float(reward)
                 steps += 1
                 
-                # choose next action
+                # choose next action according to current policy π (epsilon-greedy)
+                # π(s') -> a' (depends on ε and Q)
                 next_action = self.choose_action(next_state)
                 
                 # sarsa update: q(s,a) <- q(s,a) + alpha * [r + gamma * q(s',a') - q(s,a)]
+
+                # old_q = Q(s,a)
                 old_q = self.get_q_value(state, action)
-                td_target = reward + self.gamma * self.get_q_value(next_state, next_action) * (not done)
+                # td_target = r + γ * Q(s',a') * (1 - I_terminal)
+                td_target = float(reward) + self.gamma * self.get_q_value(next_state, next_action) * (not done)
+                # temporal difference error: δ = td_target - Q(s,a)
                 td_error = td_target - old_q
+                # Q update: Q(s,a) ← Q(s,a) + α * δ
                 new_q = old_q + self.alpha * td_error
                 self.q_table[(state, action)] = new_q
                 
@@ -138,11 +152,15 @@ class SARSA:
             episode_explorations.append(explorations / max(steps, 1))
             
             # q-table statistics
+            # size = |Q| (number of stored state-action entries)
             episode_q_table_sizes.append(len(self.q_table))
+            # nonzero_q = count_{(s,a)} [ |Q(s,a)| > threshold ]
             nonzero_q = sum(1 for v in self.q_table.values() if abs(v) > 1e-10)
             episode_q_table_nonzeros.append(nonzero_q)
             
             # value function statistics
+            # max Q = max_{(s,a)} Q(s,a)
+            # mean Q = (1/n) * sum_{(s,a)} Q(s,a)
             q_values = list(self.q_table.values())
             if q_values:
                 episode_max_q_values.append(max(q_values))
@@ -152,11 +170,14 @@ class SARSA:
                 episode_mean_q_values.append(0.0)
             
             # action entropy (policy convergence)
+            # action_probs = p_i = n_i / Σ n_j
             action_probs = action_counts / max(action_counts.sum(), 1)
             action_probs = action_probs[action_probs > 0]  # filter zeros for entropy
+            # H = - sum_i p_i log p_i
             episode_action_entropies.append(compute_entropy(action_probs))
             
             # variance metrics (stability)
+            # std = sqrt( (1/n) * sum_i (x_i - mean)^2 )
             episode_td_error_stds.append(np.std(td_errors_list) if len(td_errors_list) > 1 else 0.0)
             episode_q_change_stds.append(np.std(q_changes_list) if len(q_changes_list) > 1 else 0.0)
             

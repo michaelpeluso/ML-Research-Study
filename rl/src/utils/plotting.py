@@ -1,4 +1,3 @@
-# AI Use Statement: plotting utilities created with GitHub Copilot assistance
 """generate report-ready figures"""
 import matplotlib.pyplot as plt
 import seaborn as sns

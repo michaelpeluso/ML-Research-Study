@@ -1,45 +1,128 @@
-# AI Use Statement: hyperparameter search ranges created with GitHub Copilot assistance
-# staged hyperparameter search ranges (coarse to fine)
+# hyperparameter search ranges for staged search protocol
+# recommendation: use successive halving (coarse → fine) to find optimal configs
 
-# stage 1: coarse search
+# ==============================================================================
+# STAGE 1: COARSE RANDOM SEARCH (wide ranges, early stopping)
+# ==============================================================================
+# purpose: eliminate poor configurations quickly
+# budget: 200-500 pilot episodes per candidate, keep top 50%
+# sampling: log-scale for alpha, linear for gamma/epsilon
+
 stage1:
     sarsa:
-        alpha: [0.01, 0.1, 0.5]
-        gamma: [0.9, 0.99, 0.999]
-        epsilon: [0.05, 0.1, 0.2]
+        alpha:              [0.01, 0.05, 0.1, 0.3, 0.5]          # learning rate
+        gamma:              [0.9, 0.95, 0.99, 0.999]             # discount factor
+        epsilon:            [0.05, 0.1, 0.2, 0.3]                # initial exploration
+        epsilon_decay:      [0.99, 0.995, 0.999]                 # exploration decay
+        epsilon_floor:      [0.005, 0.01, 0.05]                  # minimum exploration
 
-    q_learning:
-        alpha: [0.01, 0.1, 0.5]
-        gamma: [0.9, 0.99, 0.999]
-        epsilon: [0.05, 0.1, 0.2]
+    qlearning:
+        alpha:              [0.01, 0.05, 0.1, 0.3, 0.5]          # learning rate
+        gamma:              [0.9, 0.95, 0.99, 0.999]             # discount factor
+        epsilon:            [0.05, 0.1, 0.2, 0.3]                # initial exploration
+        epsilon_decay:      [0.99, 0.995, 0.999]                 # exploration decay
+        epsilon_floor:      [0.005, 0.01, 0.05]                  # minimum exploration
 
-# stage 2: medium refinement
+    vi:
+        gamma:              [0.9, 0.95, 0.99, 0.999]             # discount factor
+        theta:              [0.0001, 0.001, 0.01]                # convergence threshold
+
+    pi:
+        gamma:              [0.9, 0.95, 0.99, 0.999]             # discount factor
+        theta:              [0.0001, 0.001, 0.01]                # convergence threshold
+
+# ==============================================================================
+# STAGE 2: MEDIUM REFINEMENT (narrower ranges around top performers)
+# ==============================================================================
+# purpose: refine around promising candidates
+# budget: 1000-2000 episodes per candidate, keep top 3-5
+
 stage2:
     sarsa:
-        alpha: [0.05, 0.1, 0.15, 0.2]
-        gamma: [0.95, 0.99, 0.995]
-        epsilon: [0.05, 0.1, 0.15]
+        alpha:              [0.05, 0.1, 0.15, 0.2, 0.25]
+        gamma:              [0.95, 0.97, 0.99, 0.995]
+        epsilon:            [0.05, 0.1, 0.15, 0.2]
+        epsilon_decay:      [0.992, 0.995, 0.998]
+        epsilon_floor:      [0.005, 0.01, 0.02]
 
-    q_learning:
-        alpha: [0.05, 0.1, 0.15, 0.2]
-        gamma: [0.95, 0.99, 0.995]
-        epsilon: [0.05, 0.1, 0.15]
+    qlearning:
+        alpha:              [0.05, 0.1, 0.15, 0.2, 0.25]
+        gamma:              [0.95, 0.97, 0.99, 0.995]
+        epsilon:            [0.05, 0.1, 0.15, 0.2]
+        epsilon_decay:      [0.992, 0.995, 0.998]
+        epsilon_floor:      [0.005, 0.01, 0.02]
 
-# stage 3: fine tuning
+    vi:
+        gamma:              [0.95, 0.97, 0.99, 0.995]
+        theta:              [0.00005, 0.0001, 0.0005, 0.001]
+
+    pi:
+        gamma:              [0.95, 0.97, 0.99, 0.995]
+        theta:              [0.00005, 0.0001, 0.0005, 0.001]
+
+# ==============================================================================
+# STAGE 3: FINE TUNING (local refinement around champion)
+# ==============================================================================
+# purpose: squeeze final performance gains
+# budget: full 10k episodes, 30-50 seeds for final validation
+
 stage3:
     sarsa:
-        alpha: [0.08, 0.1, 0.12, 0.15]
-        gamma: [0.98, 0.99, 0.995]
-        epsilon: [0.08, 0.1, 0.12]
+        alpha:              [0.08, 0.1, 0.12, 0.15]
+        gamma:              [0.98, 0.99, 0.995]
+        epsilon:            [0.08, 0.1, 0.12]
+        epsilon_decay:      [0.994, 0.995, 0.996]
+        epsilon_floor:      [0.008, 0.01, 0.012]
 
-    q_learning:
-        alpha: [0.08, 0.1, 0.12, 0.15]
-        gamma: [0.98, 0.99, 0.995]
-        epsilon: [0.08, 0.1, 0.12]
+    qlearning:
+        alpha:              [0.08, 0.1, 0.12, 0.15]
+        gamma:              [0.98, 0.99, 0.995]
+        epsilon:            [0.08, 0.1, 0.12]
+        epsilon_decay:      [0.994, 0.995, 0.996]
+        epsilon_floor:      [0.008, 0.01, 0.012]
 
-# discretization search (cartpole)
+    vi:
+        gamma:              [0.985, 0.99, 0.995]
+        theta:              [0.00008, 0.0001, 0.00012]
+
+    pi:
+        gamma:              [0.985, 0.99, 0.995]
+        theta:              [0.00008, 0.0001, 0.00012]
+
+# ==============================================================================
+# DISCRETIZATION SEARCH (cartpole state space)
+# ==============================================================================
+# report recommendation: prioritize theta and theta_dot resolution
+# clamps: x∈[-2.4,2.4], x_dot∈[-3,3], theta∈[-0.209,0.209], theta_dot∈[-3.5,3.5]
+
 discretization:
-    bins_x: [3, 4, 5, 6]
-    bins_x_dot: [3, 4, 5, 6]
-    bins_theta: [6, 8, 10, 12]
-    bins_theta_dot: [8, 10, 12, 15]
+    # conservative (fast, coarse)
+    coarse:
+        bins_x:             [2, 3, 4]                            # cart position
+        bins_x_dot:         [2, 3, 4]                            # cart velocity
+        bins_theta:         [4, 6, 8]                            # pole angle (critical)
+        bins_theta_dot:     [6, 8, 10]                           # angular velocity (critical)
+
+    # balanced (recommended starting point)
+    medium:
+        bins_x:             [3, 4, 5]
+        bins_x_dot:         [3, 4, 5]
+        bins_theta:         [6, 8, 10, 12]
+        bins_theta_dot:     [8, 10, 12, 15]
+
+    # fine (slower, higher resolution)
+    fine:
+        bins_x:             [4, 5, 6]
+        bins_x_dot:         [4, 5, 6]
+        bins_theta:         [10, 12, 15]
+        bins_theta_dot:     [12, 15, 20]
+
+# ==============================================================================
+# SEARCH PROTOCOL NOTES
+# ==============================================================================
+# 1. Start with stage1 coarse search: random sample N=24 candidates, run 200 episodes
+# 2. Successive halving: discard bottom 50%, add 400 episodes to top 12
+# 3. Keep top 8, move to stage2: add 1000 episodes
+# 4. Keep top 3, move to stage3: full 10k episodes with 30-50 seeds
+# 5. For discretization: pair with medium hyperparams, ablate grid resolution
+# 6. Document: ranges, sampling, budgets, wall-clock, final champion + justification

@@ -1,8 +1,19 @@
-# AI Use Statement: Q-Learning algorithm created with GitHub Copilot assistance
+"""Q-Learning algorithm implementation"""
 """q-learning off-policy td learning"""
 import numpy as np
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Set
 import gymnasium as gym
+
+
+def compute_entropy(probs: np.ndarray) -> float:
+    """compute shannon entropy of probability distribution"""
+    probs = probs[probs > 0]  # filter zeros
+    if len(probs) == 0:
+        return 0.0
+
+    # amount of information needed to describe the outcome (measures randomness)
+    # shannon entropy: H(p) = - sum_i p_i * log(p_i)
+    return float(np.sum(-probs * np.log(probs)))
 
 
 class QLearning:
@@ -51,12 +62,24 @@ class QLearning:
             return self.env.action_space.sample()
         
         # greedy action
-        q_values = [self.get_q_value(state, a) for a in range(self.env.action_space.n)]
+        q_values = [self.get_q_value(state, a) for a in range(self.env.action_space.n)]  # type: ignore
         return int(np.argmax(q_values))
     
     def train(self) -> Dict[str, Any]:
         """train q-learning agent and return results"""
         episode_returns = []
+        episode_steps = []
+        episode_td_errors = []
+        episode_q_changes = []
+        episode_explorations = []
+        episode_q_table_sizes = []
+        episode_q_table_nonzeros = []
+        episode_max_q_values = []
+        episode_mean_q_values = []
+        episode_action_entropies = []
+        episode_td_error_stds = []
+        episode_q_change_stds = []
+        episode_unique_states = []
         
         for episode in range(self.num_episodes):
             state, _ = self.env.reset()
@@ -64,32 +87,105 @@ class QLearning:
                 state = tuple(state)
             
             episode_return = 0.0
-            done = False
+            steps = 0
+            td_errors_sum = 0.0
+            q_changes_sum = 0.0
+            explorations = 0
+            td_errors_list = []
+            q_changes_list = []
+            unique_states: Set = set()
+            action_counts = np.zeros(self.env.action_space.n)  # type: ignore
             
+            done = False
             while not done:
+                # track unique states and actions
+                unique_states.add(state)
+                
                 # choose and take action
                 action = self.choose_action(state)
+                action_counts[action] += 1
+                
+                # track exploration
+                if np.random.random() < self.epsilon:
+                    explorations += 1
+                
                 next_state, reward, terminated, truncated, _ = self.env.step(action)
                 done = terminated or truncated
                 
                 if isinstance(next_state, np.ndarray):
                     next_state = tuple(next_state)
                 
-                episode_return += reward
+                episode_return += float(reward)
+                steps += 1
                 
-                # q-learning update: q(s,a) <- q(s,a) + alpha * [r + gamma * max_a' q(s',a') - q(s,a)]
-                max_next_q = max([self.get_q_value(next_state, a) for a in range(self.env.action_space.n)])
-                td_target = reward + self.gamma * max_next_q * (not done)
-                td_error = td_target - self.get_q_value(state, action)
-                self.q_table[(state, action)] = self.get_q_value(state, action) + self.alpha * td_error
+                # off-policy TD bootstrap toward the greedy next-state value
+                # q-learning update: q(s,a) <- q(s,a) + α [ r + γ max_{a'} Q(s',a') - Q(s,a) ]
+                old_q = self.get_q_value(state, action)
+                # max_next_q = max_{a'} Q(s',a')
+                max_next_q = max([self.get_q_value(next_state, a) for a in range(self.env.action_space.n)])  # type: ignore
+                # td_target = r + γ * max_next_q  (bootstrap; zero at terminal)
+                td_target = float(reward) + self.gamma * max_next_q * (not done)
+                # δ = td_target - Q(s,a)
+                td_error = td_target - old_q
+                # Q(s,a) ← Q(s,a) + α * δ  (gradient-free incremental update)
+                new_q = old_q + self.alpha * td_error
+                self.q_table[(state, action)] = new_q
+                
+                # track metrics
+                td_errors_sum += abs(td_error)
+                q_changes_sum += abs(new_q - old_q)
+                td_errors_list.append(abs(td_error))
+                q_changes_list.append(abs(new_q - old_q))
                 
                 state = next_state
             
             episode_returns.append(episode_return)
+            episode_steps.append(steps)
+            episode_td_errors.append(td_errors_sum / max(steps, 1))
+            episode_q_changes.append(q_changes_sum / max(steps, 1))
+            episode_explorations.append(explorations / max(steps, 1))
+            
+            # q-table statistics
+            episode_q_table_sizes.append(len(self.q_table))
+            nonzero_q = sum(1 for v in self.q_table.values() if abs(v) > 1e-10)
+            episode_q_table_nonzeros.append(nonzero_q)
+            
+            # value function statistics
+            q_values = list(self.q_table.values())
+            if q_values:
+                episode_max_q_values.append(max(q_values))
+                episode_mean_q_values.append(np.mean(q_values))
+            else:
+                episode_max_q_values.append(0.0)
+                episode_mean_q_values.append(0.0)
+            
+            # action entropy (policy convergence)
+            action_probs = action_counts / max(action_counts.sum(), 1)
+            action_probs = action_probs[action_probs > 0]
+            episode_action_entropies.append(compute_entropy(action_probs))
+            
+            # variance metrics (stability)
+            episode_td_error_stds.append(np.std(td_errors_list) if len(td_errors_list) > 1 else 0.0)
+            episode_q_change_stds.append(np.std(q_changes_list) if len(q_changes_list) > 1 else 0.0)
+            
+            # exploration breadth
+            episode_unique_states.append(len(unique_states))
         
         return {
             'q_table': self.q_table,
             'episode_returns': episode_returns,
+            'episode_steps': episode_steps,
+            'episode_td_errors': episode_td_errors,
+            'episode_q_changes': episode_q_changes,
+            'episode_explorations': episode_explorations,
+            'episode_q_table_sizes': episode_q_table_sizes,
+            'episode_q_table_nonzeros': episode_q_table_nonzeros,
+            'episode_max_q_values': episode_max_q_values,
+            'episode_mean_q_values': episode_mean_q_values,
+            'episode_action_entropies': episode_action_entropies,
+            'episode_td_error_stds': episode_td_error_stds,
+            'episode_q_change_stds': episode_q_change_stds,
+            'episode_unique_states': episode_unique_states,
             'metadata': {
                 'alpha': self.alpha,
                 'gamma': self.gamma,

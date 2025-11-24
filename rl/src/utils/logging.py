@@ -1,41 +1,44 @@
-# AI Use Statement: experiment logging utilities created with GitHub Copilot assistance
-"""robust experiment logging and metadata utilities
+"""Experiment logging utilities
+
+robust experiment logging and metadata utilities
 
 features:
 - write episode-level CSVs with consistent headers
-- write JSON metadata sidecar containing commit sha, timestamp, seed, hyperparams, and command
-- filenames include git short sha and timestamp
+- write JSON metadata sidecar containing timestamp, seed, hyperparams, and command
+- filenames are stable (no timestamps) so repeated runs replace previous outputs
 - context-manager support and safe append
 """
-from __future__ import annotations
 
 import csv
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, Optional
-import subprocess
-import sys
-import platform
-from importlib import metadata as importlib_metadata
+import numpy as np
 
 
-def get_git_sha(short: bool = True) -> str:
-    """return current git commit short sha or 'dev' if unavailable"""
-    try:
-        args = ['git', 'rev-parse', '--short', 'HEAD'] if short else ['git', 'rev-parse', 'HEAD']
-        sha = subprocess.check_output(args, cwd=Path('.')).decode().strip()
-        return sha
-    except Exception:
-        return 'dev'
+def _convert_to_json_serializable(obj: Any) -> Any:
+    """recursively convert numpy arrays and other non-serializable types to json-safe types"""
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, dict):
+        return {k: _convert_to_json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [_convert_to_json_serializable(item) for item in obj]
+    elif isinstance(obj, set):
+        return list(obj)
+    else:
+        return obj
 
 
-def make_filename(base: str, sha: Optional[str] = None, ext: str = 'csv') -> str:
-    """generate filename with optional git sha and timestamp"""
-    sha = sha or get_git_sha()
-    timestamp = datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
-    return f"{base}_{sha}_{timestamp}.{ext}"
+def make_filename(base: str, ext: str = 'csv') -> str:
+    """generate stable filename (no timestamp) so outputs overwrite previous runs"""
+    return f"{base}.{ext}"
 
 
 def _ensure_dir(path: Path) -> None:
@@ -66,8 +69,7 @@ class ExperimentLogger:
         self.metadata = metadata or {}
 
         base = filename_base or f"{experiment_name}_seed{seed}"
-        self.sha = get_git_sha()
-        self.filename = make_filename(base, sha=self.sha, ext='csv')
+        self.filename = make_filename(base, ext='csv')
         self.log_file = self.output_dir / self.filename
 
         # json metadata sidecar path
@@ -81,19 +83,55 @@ class ExperimentLogger:
         # prepare metadata
         self.metadata.setdefault('experiment_name', experiment_name)
         self.metadata.setdefault('seed', seed)
-        self.metadata.setdefault('commit_sha', self.sha)
         self.metadata.setdefault('created_at_utc', datetime.utcnow().isoformat() + 'Z')
 
         # write metadata sidecar upfront
         self._write_metadata()
 
     def _write_metadata(self) -> None:
+        """write metadata to json sidecar file with safe serialization and organized structure"""
         try:
+            # convert any non-serializable objects (numpy arrays, etc.)
+            serializable_metadata = _convert_to_json_serializable(self.metadata)
+            
+            # reorganize into logical sections for better readability
+            organized = {
+                'experiment': {
+                    'name': serializable_metadata.get('experiment_name', ''),
+                    'algorithm': serializable_metadata.get('algorithm', ''),
+                    'environment': serializable_metadata.get('environment', ''),
+                    'seed': serializable_metadata.get('seed', None),
+                    'created_at_utc': serializable_metadata.get('created_at_utc', ''),
+                    'duration_sec': serializable_metadata.get('duration_sec', None),
+                },
+                'hyperparameters': {
+                    'alpha': serializable_metadata.get('alpha', None),
+                    'gamma': serializable_metadata.get('gamma', None),
+                    'epsilon': serializable_metadata.get('epsilon', None),
+                    'episodes': serializable_metadata.get('episodes', None),
+                },
+                'environment_info': serializable_metadata.get('env', {}),
+                'results': serializable_metadata.get('summary', {}),
+            }
+            
+            # add any extra fields not captured above
+            standard_keys = {'experiment_name', 'algorithm', 'environment', 'seed', 'created_at_utc', 
+                           'duration_sec', 'alpha', 'gamma', 'epsilon', 'episodes', 'env', 'summary'}
+            extra = {k: v for k, v in serializable_metadata.items() if k not in standard_keys}
+            if extra:
+                organized['extra'] = extra
+            
             with open(self.meta_file, 'w', encoding='utf-8') as mf:
-                json.dump(self.metadata, mf, indent=2, sort_keys=True)
-        except Exception:
-            # do not crash experiments for metadata write failure
-            pass
+                json.dump(organized, mf, indent=2)
+        except Exception as e:
+            # write error info to a companion .err file for debugging
+            err_file = self.meta_file.with_suffix('.json.err')
+            try:
+                with open(err_file, 'w') as ef:
+                    ef.write(f"JSON serialization error: {e}\n")
+                    ef.write(f"Metadata keys: {list(self.metadata.keys())}\n")
+            except Exception:
+                pass
 
     def __enter__(self) -> 'ExperimentLogger':
         return self
@@ -111,6 +149,10 @@ class ExperimentLogger:
             self._writer = csv.DictWriter(self._file_handle, fieldnames=self._fieldnames)
             self._writer.writeheader()
 
+        # ensure _fieldnames is initialized
+        if self._fieldnames is None:
+            self._fieldnames = ['episode', 'wall_clock_sec'] + sorted(metrics.keys())
+
         # ensure row follows fieldnames order
         row = {'episode': episode, 'wall_clock_sec': time.time() - self._start_time}
         for key in self._fieldnames:
@@ -123,7 +165,7 @@ class ExperimentLogger:
 
         self._writer.writerow(row)
         try:
-            self._file_handle.flush()
+            self._file_handle.flush() # type: ignore
         except Exception:
             pass
 
@@ -152,40 +194,3 @@ class ExperimentLogger:
                 self._write_metadata()
         except Exception:
             pass
-
-    def attach_system_info(self, packages: Optional[list] = None, write: bool = True) -> None:
-        """collect python/platform and package versions and attach to metadata"""
-        try:
-            sys_info = {
-                'python_version': sys.version.replace('\n', ' '),
-                'platform': platform.platform(),
-            }
-            pkg_versions = get_package_versions(packages)
-            self.metadata.setdefault('system', {})
-            self.metadata['system'].update(sys_info)
-            self.metadata['system']['packages'] = pkg_versions
-            if write:
-                self._write_metadata()
-        except Exception:
-            pass
-
-    def get_log_path(self) -> Path:
-        return self.log_file
-
-    def get_meta_path(self) -> Path:
-        return self.meta_file
-
-
-def get_package_versions(packages: Optional[list] = None) -> Dict[str, str]:
-    """return a dict of package -> version for requested packages (best-effort)"""
-    packages = packages or ['numpy', 'pandas', 'gymnasium', 'matplotlib', 'seaborn', 'torch', 'pyyaml']
-    out: Dict[str, str] = {}
-    for pkg in packages:
-        try:
-            out[pkg] = importlib_metadata.version(pkg)
-        except importlib_metadata.PackageNotFoundError:
-            out[pkg] = 'not-installed'
-        except Exception:
-            out[pkg] = 'unknown'
-    return out
-

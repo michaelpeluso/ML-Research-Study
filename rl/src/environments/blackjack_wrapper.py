@@ -1,4 +1,4 @@
-# AI Use Statement: Blackjack environment wrapper created with GitHub Copilot assistance
+"""Blackjack environment wrapper"""
 """gymnasium blackjack wrapper with seed control"""
 import gymnasium as gym
 from typing import Tuple, Any
@@ -18,6 +18,13 @@ class BlackjackWrapper:
         self.env = gym.make('Blackjack-v1', natural=natural, sab=sab)
         self.action_space = self.env.action_space
         self.observation_space = self.env.observation_space
+        
+        # expose transition model for dynamic programming algorithms
+        if hasattr(self.env.unwrapped, 'P'):
+            self.P = self.env.unwrapped.P
+        
+        # compute state space size for VI/PI
+        self.num_states = len(self.get_state_space())
     
     def reset(self, seed: int = None) -> Tuple[Any, dict]:
         """reset environment with optional seed"""
