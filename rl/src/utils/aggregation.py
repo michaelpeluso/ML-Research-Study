@@ -1,12 +1,96 @@
-"""unified aggregation: raw per-seed results → master summary JSONs for rl report"""
+"""unified aggregation: raw per-seed results → master summary JSONs + plots for rl report"""
 from __future__ import annotations
 
 import json
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union
 from collections import defaultdict
+
+
+def generate_learning_curve_plot(
+    raw_dir: Path,
+    env_name: str,
+    algo_name: str,
+    output_dir: Path,
+    pattern: str = "*.csv",
+) -> None:
+    """generate individual learning curve: mean + iqr bands across seeds
+    
+    uses episode binning to aggregate discrete rewards into meaningful intervals.
+    this is standard practice for noisy RL data (especially blackjack with -1/0/+1 rewards).
+    aligns with report requirement: mean ± variability (IQR) over 30-50 seeds
+    """
+    raw_dir = Path(raw_dir)
+    files = sorted(raw_dir.rglob(pattern))
+    
+    if not files:
+        return
+    
+    # aggregate returns across all seeds
+    all_returns = []
+    for f in files:
+        try:
+            df = pd.read_csv(f)
+            if 'episode_return' in df.columns:
+                all_returns.append(df['episode_return'].values)
+        except Exception:
+            continue
+    
+    if not all_returns:
+        return
+    
+    # align by minimum length
+    min_len = min(len(r) for r in all_returns)
+    returns_array = np.array([r[:min_len] for r in all_returns])
+    
+    # bin size: larger for blackjack (discrete -1/0/+1), smaller for cartpole
+    bin_size = 100 if env_name == 'blackjack' else 50
+    
+    # bin episodes: compute mean return per bin for each seed
+    n_bins = min_len // bin_size
+    binned_returns = []
+    for seed_returns in returns_array:
+        seed_binned = []
+        for i in range(n_bins):
+            bin_mean = seed_returns[i*bin_size:(i+1)*bin_size].mean()
+            seed_binned.append(bin_mean)
+        binned_returns.append(seed_binned)
+    
+    binned_array = np.array(binned_returns)
+    
+    # compute mean ± IQR across seeds
+    mean = binned_array.mean(axis=0)
+    q1 = np.percentile(binned_array, 25, axis=0)
+    q3 = np.percentile(binned_array, 75, axis=0)
+    
+    bin_centers = np.arange(n_bins) * bin_size + bin_size // 2
+    
+    # plot
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(bin_centers, mean, label='mean return', linewidth=2, color='C0', alpha=0.9)
+    ax.fill_between(bin_centers, q1, q3, alpha=0.25, label='IQR', color='C0')
+    ax.set_xlabel('episode')
+    ax.set_ylabel(f'mean return (per {bin_size} episodes)')
+    ax.set_title(f'{algo_name.upper()} on {env_name.title()} (Mean ± IQR)')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5, linewidth=1)
+    
+    # add reference lines for cartpole
+    if env_name == 'cartpole':
+        ax.axhline(y=195, color='green', linestyle=':', alpha=0.7, label='solved (195)')
+        ax.axhline(y=500, color='red', linestyle=':', alpha=0.5, label='max (500)')
+        ax.legend()
+    
+    # save
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f'{algo_name}_{env_name}_learning_curve.png'
+    fig.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+    print(f"  saved plot: {output_path}")
 
 
 def compute_statistics(values: List[float]) -> Dict[str, float]:
@@ -24,69 +108,44 @@ def compute_statistics(values: List[float]) -> Dict[str, float]:
     }
 
 
-def aggregate_learning_curves(
-    raw_dir: Path,
-    pattern: str = "*.csv",
-    x_col: str = "episode",
-    metrics: Optional[List[str]] = None,
-) -> Dict[str, Any]:
-    """aggregate episode-by-episode learning curves across seeds
+def compute_episodes_to_threshold(returns: Any, threshold: float) -> int:
+    """compute sample efficiency: episodes needed to reach return threshold
     
-    returns dict with per-metric statistics (mean, q1, q3, iqr) indexed by episode
+    report requirement: compare sarsa vs q-learning on sample efficiency
+    returns first episode where moving average (window=100) exceeds threshold
     """
-    raw_dir = Path(raw_dir)
-    files: List[Path] = sorted(raw_dir.rglob(pattern))
+    returns = np.asarray(returns)  # ensure numpy array
+    if len(returns) < 100:
+        return len(returns)  # not enough data
     
-    if not files:
-        return {}
+    # smooth with 100-episode moving average
+    smoothed = pd.Series(returns).rolling(100, min_periods=1).mean()
     
-    # default metrics if not specified
-    if metrics is None:
-        metrics = [
-            'episode_return', 'steps', 'mean_abs_td_error', 'mean_abs_q_change', 
-            'exploration_ratio', 'q_table_size', 'q_table_nonzero', 'max_q_value', 
-            'mean_q_value', 'action_entropy', 'td_error_std', 'q_change_std', 
-            'unique_states_visited'
-        ]
+    # find first episode where smoothed return >= threshold
+    mask = smoothed >= threshold
+    if mask.any():
+        return int(mask.idxmax()) + 1  # +1 for 1-indexed episodes
+    else:
+        return len(returns)  # never reached threshold
+
+
+def compute_learning_variability(returns: Any, window: int = 100) -> float:
+    """compute learning stability: coefficient of variation of last episodes
     
-    dfs_by_metric = {metric: [] for metric in metrics}
+    report requirement: assess stability differences between sarsa/q-learning
+    lower cv = more stable learning (less bouncy)
+    """
+    returns = np.asarray(returns)  # ensure numpy array
+    if len(returns) < window:
+        window = len(returns)
     
-    for f in files:
-        try:
-            df = pd.read_csv(f)
-            if x_col not in df.columns:
-                continue
-            
-            for metric in metrics:
-                if metric in df.columns:
-                    dfs_by_metric[metric].append(df[[x_col, metric]].set_index(x_col))
-        except Exception:
-            continue
+    last_window = returns[-window:]
+    mean_return = np.mean(last_window)
+    std_return = np.std(last_window)
     
-    # aggregate each metric: compute mean + quartiles across seeds
-    aggregated = {}
-    for metric, dfs in dfs_by_metric.items():
-        if not dfs:
-            continue
-        
-        combined = pd.concat(dfs, axis=1)
-        numeric = combined.select_dtypes(include='number')
-        
-        # bellman aggregation: compute E[X] and IQR across seed distribution
-        mean = numeric.mean(axis=1)
-        q1 = numeric.quantile(0.25, axis=1)
-        q3 = numeric.quantile(0.75, axis=1)
-        iqr = q3 - q1
-        
-        aggregated[metric] = {
-            'episodes': mean.index.tolist(),
-            'mean': mean.values.tolist(),
-            'q1': q1.values.tolist(),
-            'q3': q3.values.tolist(),
-            'iqr': iqr.values.tolist(),
-        }
-    
-    return aggregated
+    # coefficient of variation: cv = std / |mean|
+    cv = std_return / (abs(mean_return) + 1e-10)
+    return float(cv)
 
 
 def aggregate_sarsa_qlearning(algo_name: str, results_dir: Path) -> Dict[str, Any]:
@@ -121,8 +180,9 @@ def aggregate_sarsa_qlearning(algo_name: str, results_dir: Path) -> Dict[str, An
         seeds_used = []
         hyperparams = None
         wall_times = []
-        sample_efficiency = []
-        stability_metrics = []
+        episodes_to_threshold_list = []  # sample efficiency: episodes to reach performance
+        learning_variability_list = []  # stability: cv of last 100 episodes
+        run_timestamps = []  # track when experiments were run
         
         for json_file in json_files:
             try:
@@ -139,13 +199,26 @@ def aggregate_sarsa_qlearning(algo_name: str, results_dir: Path) -> Dict[str, An
                     mean_returns.append(returns_data.get('mean', 0))
                     last_10_returns.append(returns_data.get('last_10_mean', 0))
                     
-                    # sample efficiency
-                    efficiency = results.get('sample_efficiency', {})
-                    sample_efficiency.append(efficiency.get('return_improvement_pct', 0))
-                    
-                    # stability
-                    stab = results.get('stability', {})
-                    stability_metrics.append(stab.get('last_100_coefficient_of_variation', 0))
+                    # report-required metrics: sample efficiency and stability
+                    # compute from raw CSV data for accurate threshold tracking
+                    csv_file = json_file.with_suffix('.csv')
+                    if csv_file.exists():
+                        try:
+                            df = pd.read_csv(csv_file)
+                            if 'episode_return' in df.columns:
+                                returns = df['episode_return'].values
+                                
+                                # sample efficiency: episodes to threshold
+                                # threshold = 0.0 for blackjack (win rate), 195 for cartpole (solve threshold)
+                                threshold = 195 if env_name == 'cartpole' else 0.0
+                                eps_to_thresh = compute_episodes_to_threshold(returns, threshold)
+                                episodes_to_threshold_list.append(eps_to_thresh)
+                                
+                                # stability: learning variability (cv)
+                                cv = compute_learning_variability(returns, window=100)
+                                learning_variability_list.append(cv)
+                        except Exception:
+                            pass
                     
                     # hyperparameters
                     if hyperparams is None:
@@ -160,6 +233,11 @@ def aggregate_sarsa_qlearning(algo_name: str, results_dir: Path) -> Dict[str, An
                     # wall time
                     exp = meta.get('experiment', {})
                     wall_times.append(exp.get('duration_sec', 0))
+                    
+                    # track timestamps for reproducibility reporting
+                    created = exp.get('created_at_utc', '')
+                    if created:
+                        run_timestamps.append(created)
             
             except Exception as e:
                 print(f"warning: failed to process {json_file}: {e}")
@@ -168,20 +246,24 @@ def aggregate_sarsa_qlearning(algo_name: str, results_dir: Path) -> Dict[str, An
         if not mean_returns:
             continue
         
-        # aggregate learning curves from csv files
-        learning_curves = aggregate_learning_curves(env_dir, pattern=f'{algo_name}_{env_name}_seed*.csv')
+        # generate learning curve plot (don't store data)
+        figures_dir = results_dir.parent / 'figures'
+        generate_learning_curve_plot(env_dir, env_name, algo_name, figures_dir, pattern=f'{algo_name}_{env_name}_seed*.csv')
         
-        # report requirements: mean + IQR aggregation
+        # report requirements: mean + IQR aggregation (summary stats only)
         env_summary = {
             'mean_return': compute_statistics(mean_returns),
             'last_10_episodes_return': compute_statistics(last_10_returns),
-            'sample_efficiency_pct': compute_statistics(sample_efficiency),
-            'stability_cv': compute_statistics(stability_metrics),
+            'episodes_to_threshold': compute_statistics(episodes_to_threshold_list) if episodes_to_threshold_list else {},
+            'learning_variability_cv': compute_statistics(learning_variability_list) if learning_variability_list else {},
             'wall_time_seconds': compute_statistics(wall_times),
-            'learning_curves': learning_curves,
             'seeds': sorted(seeds_used),
             'num_seeds': len(seeds_used),
             'hyperparameters': hyperparams,
+            'run_timestamps': {
+                'first': min(run_timestamps) if run_timestamps else None,
+                'last': max(run_timestamps) if run_timestamps else None,
+            },
         }
         
         aggregated['environments'][env_name] = env_summary
@@ -224,6 +306,7 @@ def aggregate_vi_pi(algo_name: str, results_dir: Path) -> Dict[str, Any]:
         mean_returns = []
         seeds_used = []
         hyperparams = None
+        run_timestamps = []  # track when experiments were run
         
         # vi-specific
         final_deltas = []
@@ -266,6 +349,12 @@ def aggregate_vi_pi(algo_name: str, results_dir: Path) -> Dict[str, Any]:
                         }
                         if algo_name == 'pi':
                             hyperparams['max_eval_iterations'] = extra.get('max_eval_iterations')
+                    
+                    # track timestamps for reproducibility reporting
+                    exp = meta.get('experiment', {})
+                    created = exp.get('created_at_utc', '')
+                    if created:
+                        run_timestamps.append(created)
             
             except Exception as e:
                 print(f"warning: failed to process {json_file}: {e}")
@@ -286,6 +375,10 @@ def aggregate_vi_pi(algo_name: str, results_dir: Path) -> Dict[str, Any]:
             'seeds': sorted(seeds_used),
             'num_seeds': len(seeds_used),
             'hyperparameters': hyperparams,
+            'run_timestamps': {
+                'first': min(run_timestamps) if run_timestamps else None,
+                'last': max(run_timestamps) if run_timestamps else None,
+            },
         }
         
         # add algorithm-specific metrics
@@ -339,8 +432,10 @@ def create_master_summaries(results_dir: Optional[Path] = None) -> None:
             print(f"    {env_name} ({env_data['num_seeds']} seeds):")
             if algo_name in ['sarsa', 'qlearning']:
                 print(f"      mean_return: {env_data['mean_return']['mean']:.2f} ± {env_data['mean_return']['std']:.2f}")
-                print(f"      sample_efficiency: {env_data['sample_efficiency_pct']['mean']:.2f}%")
-                print(f"      stability_cv: {env_data['stability_cv']['mean']:.2f}")
+                if env_data.get('episodes_to_threshold'):
+                    print(f"      episodes_to_threshold: {env_data['episodes_to_threshold']['mean']:.0f}")
+                if env_data.get('learning_variability_cv'):
+                    print(f"      learning_variability (cv): {env_data['learning_variability_cv']['mean']:.3f}")
             else:
                 print(f"      iterations: {env_data['convergence']['iterations']['mean']:.1f}")
                 print(f"      wall_time: {env_data['convergence']['wall_time_seconds']['mean']:.3f}s")

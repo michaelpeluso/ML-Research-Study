@@ -24,7 +24,9 @@ class SARSA:
         env: gym.Env,
         alpha: float = 0.1,
         gamma: float = 0.99,
-        epsilon: float = 0.1,
+        epsilon: float = 1.0,
+        epsilon_floor: float = 0.01,
+        epsilon_decay_episodes: int = 5000,
         num_episodes: int = 10000,
         seed: Optional[int] = None
     ):
@@ -35,14 +37,19 @@ class SARSA:
             env: gymnasium environment
             alpha: learning rate
             gamma: discount factor
-            epsilon: exploration rate
+            epsilon: initial exploration rate (start high, decay over time)
+            epsilon_floor: minimum exploration rate (never go below this)
+            epsilon_decay_episodes: episodes over which to decay epsilon to floor
             num_episodes: number of training episodes
             seed: random seed for reproducibility
         """
         self.env = env
         self.alpha = alpha
         self.gamma = gamma
-        self.epsilon = epsilon
+        self.epsilon_start = epsilon
+        self.epsilon_floor = epsilon_floor
+        self.epsilon_decay_episodes = epsilon_decay_episodes
+        self.epsilon = epsilon  # current epsilon (will decay)
         self.num_episodes = num_episodes
         self.seed = seed
         
@@ -84,6 +91,13 @@ class SARSA:
         episode_unique_states = []
         
         for episode in range(self.num_episodes):
+            # linear epsilon decay: ε(t) = max(ε_floor, ε_start - t * (ε_start - ε_floor) / decay_episodes)
+            if episode < self.epsilon_decay_episodes:
+                decay_progress = episode / self.epsilon_decay_episodes
+                self.epsilon = self.epsilon_start - decay_progress * (self.epsilon_start - self.epsilon_floor)
+            else:
+                self.epsilon = self.epsilon_floor
+            
             state, _ = self.env.reset()
             if isinstance(state, np.ndarray):
                 state = tuple(state)
@@ -202,7 +216,9 @@ class SARSA:
             'metadata': {
                 'alpha': self.alpha,
                 'gamma': self.gamma,
-                'epsilon': self.epsilon,
+                'epsilon_start': self.epsilon_start,
+                'epsilon_floor': self.epsilon_floor,
+                'epsilon_decay_episodes': self.epsilon_decay_episodes,
                 'num_episodes': self.num_episodes,
                 'seed': self.seed
             }

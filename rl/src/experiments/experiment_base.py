@@ -9,8 +9,7 @@ from typing import Dict, Any, Optional
 # add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from utils.logging import ExperimentLogger
-from utils.plotting import plot_learning_curve
+from utils.experiment_logger import ExperimentLogger
 
 
 def load_config() -> dict:
@@ -20,20 +19,36 @@ def load_config() -> dict:
         return yaml.safe_load(f)
 
 
-def get_hyperparams(config: dict, algo_name: str) -> Dict[str, Any]:
-    """extract algorithm hyperparameters from config with defaults"""
+def get_hyperparams(config: dict, algo_name: str, env_name: str = None) -> Dict[str, Any]: # type: ignore
+    """extract algorithm hyperparameters from config with environment-specific overrides"""
     # get shared defaults
     shared = config.get('hyperparameters', {})
     # get algorithm-specific overrides
     algo_config = config.get(algo_name, {})
     
-    # merge with algo overrides taking precedence
-    return {
+    # base parameters with algo overrides taking precedence
+    params = {
         'alpha': algo_config.get('alpha', shared.get('alpha', 0.1)),
         'gamma': algo_config.get('gamma', shared.get('gamma', 0.99)),
         'epsilon': algo_config.get('epsilon', shared.get('epsilon', 0.1)),
         'episodes': algo_config.get('episodes', shared.get('episodes', 10000))
     }
+    
+    # apply environment-specific overrides if provided (e.g., alpha_blackjack)
+    if env_name:
+        for param in ['alpha', 'gamma', 'epsilon_floor', 'epsilon_decay_episodes']:
+            env_key = f'{param}_{env_name}'
+            if env_key in algo_config:
+                params[param] = algo_config[env_key]
+        
+        # also check for environment-specific episodes (e.g., episodes_blackjack)
+        episodes_key = f'episodes_{env_name}'
+        if episodes_key in shared:
+            params['episodes'] = shared[episodes_key]
+        if episodes_key in algo_config:
+            params['episodes'] = algo_config[episodes_key]
+    
+    return params
 
 
 def get_env_config(config: dict, env_name: str) -> Dict[str, Any]:
@@ -178,24 +193,7 @@ def save_plots(
     seed: int,
     title: str
 ) -> None:
-    """generate and save learning curve plot if enabled"""
-    output_config = config.get('output', {})
-    if not output_config.get('save_plots', True):
-        return
-
-    data = pd.read_csv(logger.log_file)
-    figure_dir = Path(logger.output_dir).parent.parent.parent / 'figures' / algo_name / env_name
-    figure_dir.mkdir(parents=True, exist_ok=True)
-    figure_path = figure_dir / f'{algo_name}_{env_name}_seed{seed}.png'
-    
-    plot_learning_curve(
-        data=data,
-        x_col='episode',
-        y_col='episode_return',
-        output_path=figure_path,
-        title=title,
-        xlabel='Episode',
-        ylabel='Episode Return'
-    )
-    
-    print(f"figure saved to {figure_path}")
+    """per-seed plots disabled - use generate_all_plots() for aggregated report figures"""
+    # per-seed plotting removed; all report plots are aggregated across seeds
+    # run: python -c "from utils.generate_report_plots import generate_all_plots; generate_all_plots()"
+    pass

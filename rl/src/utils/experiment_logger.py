@@ -102,6 +102,7 @@ class ExperimentLogger:
                     'environment': serializable_metadata.get('environment', ''),
                     'seed': serializable_metadata.get('seed', None),
                     'created_at_utc': serializable_metadata.get('created_at_utc', ''),
+                    'completed_at_utc': serializable_metadata.get('completed_at_utc', ''),
                     'duration_sec': serializable_metadata.get('duration_sec', None),
                 },
                 'hyperparameters': {
@@ -171,9 +172,10 @@ class ExperimentLogger:
 
     def close(self) -> None:
         """close internal file handle"""
-        # attach run duration to metadata and rewrite sidecar
+        # attach run duration and completion timestamp to metadata
         try:
             self.metadata['duration_sec'] = time.time() - self._start_time
+            self.metadata['completed_at_utc'] = datetime.utcnow().isoformat() + 'Z'
         except Exception:
             pass
 

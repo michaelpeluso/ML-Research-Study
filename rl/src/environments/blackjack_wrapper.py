@@ -41,11 +41,20 @@ class BlackjackWrapper:
         self.env.close()
     
     def get_state_space(self) -> list:
-        """return list of all possible states"""
-        # player sum: 4-21, dealer showing: 1-10, usable ace: True/False
+        """return list of all possible valid states
+        
+        state = (player_sum, dealer_showing, usable_ace)
+        - player_sum: 4-21 (can't have sum < 4 with 2 cards)
+        - dealer_showing: 1-10 (ace=1, face cards=10)
+        - usable_ace: True/False (but usable_ace=True requires sum >= 12)
+        """
         states = []
         for player_sum in range(4, 22):
             for dealer_card in range(1, 11):
                 for usable_ace in [False, True]:
+                    # skip invalid: usable ace requires sum >= 12
+                    # (ace counts as 11, so minimum sum with usable ace is 11+1=12)
+                    if usable_ace and player_sum < 12:
+                        continue
                     states.append((player_sum, dealer_card, usable_ace))
         return states

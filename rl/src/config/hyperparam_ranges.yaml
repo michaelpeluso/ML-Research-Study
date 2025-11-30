@@ -1,9 +1,30 @@
-# hyperparameter search ranges for staged search protocol
-# recommendation: use successive halving (coarse → fine) to find optimal configs
+# HYPERPARAMETER SEARCH - COMPLETED (Nov 25, 2025)
+# ==============================================================================
+# This file documents the 3-stage hyperparameter search protocol that was executed.
+# Final tuned hyperparameters are now in config/default.yaml
+# Complete search history available in results/hyperparam_search/stage{1,2,3}_*.json
+# ==============================================================================
+
+# ACTUAL IMPLEMENTATION USED:
+# - Log-scaled random sampling for alpha: 10^[-3, 0]
+# - Linear sampling for gamma: [0.95, 0.999], epsilon_floor: [0.005, 0.05]
+# - Decay episodes: [5000, 20000]
+# - Stage 1: N=20 candidates, pilot episodes (500 blackjack, 200 cartpole)
+# - Stage 2: Top 10 → top 5, extended episodes (2000 blackjack, 800 cartpole)
+# - Stage 3: Top 3 → best, refinement episodes (3000 blackjack, 1200 cartpole)
+#   * ±2× alpha variations, ±25% decay variations, sensitivity analysis
+
+# FINAL STAGE 3 WINNERS (environment-specific):
+# SARSA Blackjack: α=0.0011, γ=0.9511, ε_floor=0.0286, decay=8247, return=-0.382
+# SARSA CartPole: α=0.8123, γ=0.9908, ε_floor=0.0146, decay=9658, return=22.864
+# Q-Learning Blackjack: α=0.0740, γ=0.9709, ε_floor=0.0061, decay=6618, return=-0.359
+# Q-Learning CartPole: α=0.8225, γ=0.9916, ε_floor=0.0375, decay=6404, return=22.844
 
 # ==============================================================================
-# STAGE 1: COARSE RANDOM SEARCH (wide ranges, early stopping)
+# ORIGINAL TEMPLATE (NOT USED - replaced by adaptive log-scaled search)
 # ==============================================================================
+
+# STAGE 1: COARSE RANDOM SEARCH (wide ranges, early stopping)
 # purpose: eliminate poor configurations quickly
 # budget: 200-500 pilot episodes per candidate, keep top 50%
 # sampling: log-scale for alpha, linear for gamma/epsilon
@@ -95,8 +116,50 @@ stage3:
 # report recommendation: prioritize theta and theta_dot resolution
 # clamps: x∈[-2.4,2.4], x_dot∈[-3,3], theta∈[-0.209,0.209], theta_dot∈[-3.5,3.5]
 
+# ABLATION STUDY RESULTS (Nov 27, 2025)
+# ==============================================================================
+# Tested 8 bin configurations with VI and PI on CartPole:
+#
+# | Bins           | States | VI Return | PI Return | PI Iters |
+# |----------------|--------|-----------|-----------|----------|
+# | [1,1,6,8]      |     48 |       9.3 |       9.3 |        2 |
+# | [2,2,6,8]      |    192 |       9.3 |       9.3 |        2 |
+# | [3,3,6,8]      |    432 |       9.2 |       9.2 |        2 |
+# | [3,3,8,10]     |    720 |       9.3 |       9.3 |        2 |
+# | [3,3,10,12]    |   1080 |      17.0 |      44.9 |        5 |
+# | [4,4,10,12] ** |   1920 |      17.5 |     140.4 |        5 | <-- OPTIMAL
+# | [3,3,12,16]    |   1728 |      11.1 |      11.1 |        6 |
+# | [5,5,12,16]    |   4800 |      11.2 |      11.2 |        5 |
+#
+# KEY FINDINGS:
+# 1. PI significantly outperforms VI (140 vs 17.5 return at optimal bins)
+# 2. Sweet spot at [4,4,10,12] (1920 states) - best balance of resolution/sparsity
+# 3. More bins ≠ better: [5,5,12,16] (4800 states) underperforms due to sparse transitions
+# 4. VI struggles with convergence (918 iters = max limit), PI converges in 2-6 iters
+# 5. Position/velocity resolution (x, x_dot) matters - [3,3,*,*] underperforms [4,4,*,*]
+#
+# OPTIMAL CONFIGURATION: [4, 4, 10, 12] for both VI and PI
+# ==============================================================================
+
 discretization:
-    # conservative (fast, coarse)
+    # tested configurations (from ablation study)
+    tested_configs:
+        - [1, 1, 6, 8]      # 48 states - too coarse
+        - [2, 2, 6, 8]      # 192 states - still too coarse
+        - [3, 3, 6, 8]      # 432 states - original default (poor)
+        - [3, 3, 8, 10]     # 720 states - slight improvement
+        - [3, 3, 10, 12]    # 1080 states - good for PI
+        - [4, 4, 10, 12]    # 1920 states - OPTIMAL
+        - [3, 3, 12, 16]    # 1728 states - fine angle but coarse position
+        - [5, 5, 12, 16]    # 4800 states - too fine (sparse transitions)
+    
+    # optimal for VI/PI (from ablation)
+    optimal_vi_pi: [4, 4, 10, 12]  # 1920 states, PI return ~140
+    
+    # recommended for SARSA/Q-Learning (can be finer due to online learning)
+    optimal_td: [3, 3, 8, 12]      # 864 states
+    
+    # conservative (fast, coarse) - NOT RECOMMENDED
     coarse:
         bins_x:             [2, 3, 4]                            # cart position
         bins_x_dot:         [2, 3, 4]                            # cart velocity
@@ -110,7 +173,7 @@ discretization:
         bins_theta:         [6, 8, 10, 12]
         bins_theta_dot:     [8, 10, 12, 15]
 
-    # fine (slower, higher resolution)
+    # fine (slower, higher resolution) - CAUTION: may cause sparse transition issues
     fine:
         bins_x:             [4, 5, 6]
         bins_x_dot:         [4, 5, 6]

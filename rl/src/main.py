@@ -7,6 +7,7 @@ all parameters configured in src/config/default.yaml
 no command-line arguments needed!
 """
 import os, sys
+import shutil
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
@@ -16,13 +17,74 @@ os.environ['ROOT'] = os.path.dirname(script_dir)
 import sys
 from pathlib import Path
 import yaml
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Tuple
 import traceback
+from multiprocessing import Pool, cpu_count
  
 # unified experiment runner
 from experiments.run_experiment import run_experiment as run_unified_experiment
 # aggregate master summaries after experiments
 from utils.aggregation import create_master_summaries
+# generate comprehensive report plots
+from utils.generate_report_plots import generate_all_plots
+
+
+def clean_previous_results(
+    results_dir: Path,
+    experiments: List[Tuple[str, str]],
+    seeds: List[int],
+    seeds_vi_pi: List[int]
+) -> None:
+    """remove previous experiment results to prevent data accumulation bug
+    
+    CRITICAL: old results from different seed ranges would otherwise accumulate
+    and pollute the master_summary.json aggregation.
+    
+    only cleans data for experiments that will be run (algo/env combinations).
+    """
+    raw_dir = results_dir / 'raw'
+    if not raw_dir.exists():
+        return
+    
+    print("\n--- Cleaning previous results ---")
+    cleaned_count = 0
+    
+    for algo, env in experiments:
+        algo_env_dir = raw_dir / algo / env
+        if not algo_env_dir.exists():
+            continue
+        
+        # determine which seeds this experiment uses
+        exp_seeds = seeds_vi_pi if algo in ['vi', 'pi'] else seeds
+        
+        # find ALL existing result files for this algo/env
+        existing_csvs = list(algo_env_dir.glob(f'{algo}_{env}_seed*.csv'))
+        existing_jsons = list(algo_env_dir.glob(f'{algo}_{env}_seed*.json'))
+        
+        # delete files that won't be overwritten by current run
+        # (i.e., seeds not in current seed list)
+        for f in existing_csvs + existing_jsons:
+            try:
+                seed_str = f.stem.split('seed')[-1]
+                file_seed = int(seed_str)
+                if file_seed not in exp_seeds:
+                    f.unlink()
+                    cleaned_count += 1
+            except (ValueError, IndexError):
+                # can't parse seed, delete to be safe
+                f.unlink()
+                cleaned_count += 1
+        
+        # also delete master_summary.json (will be regenerated)
+        master_summary = raw_dir / algo / 'master_summary.json'
+        if master_summary.exists():
+            master_summary.unlink()
+    
+    if cleaned_count > 0:
+        print(f"  removed {cleaned_count} stale result files")
+    else:
+        print("  no stale files found")
+    print()
 
 
 def load_config(config_path: Optional[Path] = None) -> dict:
@@ -62,6 +124,12 @@ def run_experiment(algo: str, env: str, config: Dict[str, Any], seed: int) -> in
         return 1
 
 
+def run_experiment_wrapper(args):
+    """wrapper for parallel execution - unpacks tuple and runs experiment"""
+    algo, env, config, seed = args
+    return (algo, env, seed, run_experiment(algo, env, config, seed))
+
+
 def main():
     # load config (no argparse needed!)
     config_path = Path(__file__).parent / 'config' / 'default.yaml'
@@ -78,8 +146,24 @@ def main():
     if smoke_test:
         config['seeds'] = config.get('seeds_smoke', [0, 1])
         if 'hyperparameters' in config:
-            config['hyperparameters']['episodes'] = config['hyperparameters'].get('episodes_smoke', 100)
-        print("\n⚠️  SMOKE TEST MODE ENABLED - using reduced seeds and episodes")
+            prod_episodes = config['hyperparameters'].get('episodes', 10000)
+            smoke_episodes = config['hyperparameters'].get('episodes_smoke', 2000)
+            config['hyperparameters']['episodes'] = smoke_episodes
+            
+            # scale epsilon_decay_episodes proportionally for smoke test
+            # otherwise epsilon barely decays during short smoke test runs
+            scale_factor = smoke_episodes / prod_episodes
+            
+            for algo in ['sarsa', 'qlearning']:
+                if algo in config:
+                    for key in list(config[algo].keys()):
+                        if 'epsilon_decay_episodes' in key:
+                            original = config[algo][key]
+                            scaled = int(original * scale_factor)
+                            config[algo][key] = scaled
+                            
+        print("\n[SMOKE TEST] using reduced seeds and episodes")
+        print(f"    epsilon decay scaled to {scale_factor:.1%} of production")
         print("    set smoke_test: false in config/default.yaml for production runs\n")
     
     # extract experiment settings from config
@@ -109,6 +193,22 @@ def main():
     
     # get seeds from config (already adjusted for smoke test above)
     seeds = config.get('seeds', [0, 1, 2, 3, 4])
+    seeds_vi_pi = config.get('seeds_vi_pi', [0, 1, 2, 3, 4])
+    
+    # clean previous results to prevent data accumulation bug
+    # set clean_previous_results: false in config to disable
+    results_dir = Path(__file__).parent.parent / 'results'
+    if config.get('clean_previous_results', True):
+        clean_previous_results(results_dir, experiments, seeds, seeds_vi_pi)
+    
+    # parallelization settings
+    n_jobs = config.get('n_jobs', 1)  # default: sequential
+    if n_jobs == -1:
+        n_jobs = cpu_count()  # use all cores
+    elif n_jobs < -1:
+        n_jobs = max(1, cpu_count() + n_jobs + 1)  # e.g., -2 = all but 1
+    
+    parallel_mode = n_jobs > 1
     
     print(f"\n{'='*60}")
     print("RL EXPERIMENT RUNNER")
@@ -116,18 +216,42 @@ def main():
     print(f"mode: {'SMOKE TEST' if smoke_test else 'PRODUCTION'}")
     print(f"config file: {config_path}")
     print(f"experiments: {len(experiments)}")
-    print(f"seeds per experiment: {len(seeds)}")
-    print(f"total runs: {len(experiments) * len(seeds)}")
+    print(f"SARSA/Q-Learning seeds: {len(seeds)} (required: 30-50)")
+    print(f"VI/PI seeds: {len(seeds_vi_pi)} (optional for robustness)")
+    print(f"total runs: {sum(len(seeds) if algo in ['sarsa', 'qlearning'] else len(seeds_vi_pi) for algo, _ in experiments)}")
+    print(f"parallelization: {'YES (' + str(n_jobs) + ' workers)' if parallel_mode else 'NO (sequential)'}")
     print('='*60)
     
-    # run experiments
+    # prepare experiment tasks
+    tasks = []
+    for algo, env in experiments:
+        # use appropriate seed list based on algorithm type
+        algo_seeds = seeds_vi_pi if algo in ['vi', 'pi'] else seeds
+        for seed in algo_seeds:
+            tasks.append((algo, env, config, seed))
+    
+    # run experiments (parallel or sequential)
     failed_runs = []
     successful_runs = []
     skipped_runs = []
-
-    for algo, env in experiments:
-        for seed in seeds:
-            exit_code = run_experiment(algo, env, config, seed)
+    
+    if parallel_mode:
+        print(f"\n[PARALLEL] running {len(tasks)} experiments with {n_jobs} workers...")
+        with Pool(processes=n_jobs) as pool:
+            results = pool.map(run_experiment_wrapper, tasks)
+        
+        # process results
+        for algo, env, seed, exit_code in results:
+            if exit_code == 0:
+                successful_runs.append((algo, env, seed))
+            elif exit_code == 2:
+                skipped_runs.append((algo, env, seed))
+            else:
+                failed_runs.append((algo, env, seed))
+    else:
+        print(f"\n[SEQUENTIAL] running {len(tasks)} experiments...")
+        for algo, env, config_task, seed in tasks:
+            exit_code = run_experiment(algo, env, config_task, seed)
             if exit_code == 0:
                 successful_runs.append((algo, env, seed))
             elif exit_code == 2:
@@ -151,7 +275,8 @@ def main():
     print(f"\n{'='*60}")
     print("EXPERIMENT SUMMARY")
     print('='*60)
-    print(f"total runs: {len(experiments) * len(seeds)}")
+    total_expected = sum(len(seeds) if algo in ['sarsa', 'qlearning'] else len(seeds_vi_pi) for algo, _ in experiments)
+    print(f"total runs: {total_expected}")
     print(f"successful: {len(successful_runs)}")
     print(f"failed: {len(failed_runs)}")
     
@@ -178,6 +303,16 @@ def main():
         print("master summaries created: results/raw/*/master_summary.json")
     except Exception as e:
         print(f"warning: failed to create master summaries: {e}")
+    
+    # generate comprehensive report plots
+    try:
+        print("\ngenerating comprehensive report plots...")
+        generate_all_plots()
+        print("all report plots generated successfully!")
+    except Exception as e:
+        print(f"warning: failed to generate report plots: {e}")
+        traceback.print_exc()
+    
     return 0
 
 

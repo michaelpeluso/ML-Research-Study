@@ -211,18 +211,17 @@ class ValueIteration:
     
     def _state_to_index(self, state) -> int:
         """convert multi-dimensional state to single index"""
+        # assume state is already an index (most common case)
+        if isinstance(state, (int, np.integer)):
+            return int(state)
         # for environments with state_to_idx mapping
         if hasattr(self.env, 'state_to_idx') and state in self.env.state_to_idx:
             return self.env.state_to_idx[state]
-        # for discretized cartpole or similar
+        # for discretized cartpole or similar (continuous state → discrete index)
         if hasattr(self.env, 'discretizer'):
-            return self.env.discretizer.discretize(state)
-        # assume state is already an index
-        if isinstance(state, int):
-            return state
-        # if tuple of ints, assume it's already a discrete state index
+            return self.env.discretizer.discretize_to_index(state)
+        # if tuple of ints, try to find in state_to_idx
         if isinstance(state, tuple):
-            # try to find in state_to_idx
             if hasattr(self.env, 'state_to_idx'):
                 return self.env.state_to_idx.get(state, 0)
             return 0

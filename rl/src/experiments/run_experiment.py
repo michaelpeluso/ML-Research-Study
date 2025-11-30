@@ -21,7 +21,8 @@ from environments.cartpole_discretizer import StateDiscretizer, DiscretizedEnv
 
 # utilities
 from utils.seeding import set_all_seeds
-from utils.logging import ExperimentLogger
+from utils.experiment_logger import ExperimentLogger
+from utils.save_artifacts import save_td_artifacts, save_dp_artifacts
 from experiments.experiment_base import (
     get_hyperparams, get_env_config, print_experiment_header, log_results, save_plots
 )
@@ -32,8 +33,8 @@ def run_sarsa(env_name: str, config: dict, seed: int):
     algo_name = 'sarsa'
     algo_class = SARSA
     
-    # extract hyperparameters
-    params = get_hyperparams(config, algo_name)
+    # extract hyperparameters (environment-specific)
+    params = get_hyperparams(config, algo_name, env_name)
     env_config = get_env_config(config, env_name)
     
     # environment-specific setup
@@ -103,13 +104,20 @@ def run_sarsa(env_name: str, config: dict, seed: int):
     else:
         raise ValueError(f"unknown environment: {env_name}")
     
-    # train agent
+    # train agent with epsilon decay
+    epsilon_floor = params.get('epsilon_floor', 0.01)
+    epsilon_decay_episodes = params.get('epsilon_decay_episodes', params['episodes'] // 2)
+    
     print(f"training {algo_name} on {env_name} for {params['episodes']} episodes...")
+    print(f"  epsilon decay: {params['epsilon']:.3f} -> {epsilon_floor:.4f} over {epsilon_decay_episodes} episodes")
+    
     agent = algo_class(
         env=env,  # type: ignore
         alpha=params['alpha'],
         gamma=params['gamma'],
         epsilon=params['epsilon'],
+        epsilon_floor=epsilon_floor,
+        epsilon_decay_episodes=epsilon_decay_episodes,
         num_episodes=params['episodes'],
         seed=seed,
     )
@@ -122,6 +130,9 @@ def run_sarsa(env_name: str, config: dict, seed: int):
         logger.update_metadata({'env': env_info})
         log_results(logger, results, env_info)
         print(f"results saved to {logger.log_file}")
+        
+        # save q-table and policy for visualization
+        save_td_artifacts(output_dir, algo_name, env_name, seed, results)
         
         # generate plots
         save_plots(config, logger, algo_name, env_name, seed, f"{algo_name.upper()} on {env_name.capitalize()}")
@@ -129,12 +140,12 @@ def run_sarsa(env_name: str, config: dict, seed: int):
 
 
 def run_qlearning(env_name: str, config: dict, seed: int):
-    """run q-learning on blackjack or cartpole"""
+    """run qlearning on blackjack or cartpole"""
     algo_name = 'qlearning'
     algo_class = QLearning
     
-    # extract hyperparameters
-    params = get_hyperparams(config, algo_name)
+    # extract hyperparameters (environment-specific)
+    params = get_hyperparams(config, algo_name, env_name)
     env_config = get_env_config(config, env_name)
     
     # environment-specific setup
@@ -204,13 +215,20 @@ def run_qlearning(env_name: str, config: dict, seed: int):
     else:
         raise ValueError(f"unknown environment: {env_name}")
     
-    # train agent
+    # train agent with epsilon decay
+    epsilon_floor = params.get('epsilon_floor', 0.01)
+    epsilon_decay_episodes = params.get('epsilon_decay_episodes', params['episodes'] // 2)
+    
     print(f"training {algo_name} on {env_name} for {params['episodes']} episodes...")
+    print(f"  epsilon decay: {params['epsilon']:.3f} -> {epsilon_floor:.4f} over {epsilon_decay_episodes} episodes")
+    
     agent = algo_class(
         env=env,  # type: ignore
         alpha=params['alpha'],
         gamma=params['gamma'],
         epsilon=params['epsilon'],
+        epsilon_floor=epsilon_floor,
+        epsilon_decay_episodes=epsilon_decay_episodes,
         num_episodes=params['episodes'],
         seed=seed,
     )
@@ -224,24 +242,20 @@ def run_qlearning(env_name: str, config: dict, seed: int):
         log_results(logger, results, env_info)
         print(f"results saved to {logger.log_file}")
         
+        # save q-table and policy for visualization
+        save_td_artifacts(output_dir, algo_name, env_name, seed, results)
+        
         # generate plots
         save_plots(config, logger, algo_name, env_name, seed, f"{algo_name.upper()} on {env_name.capitalize()}")
     return 'success'
 
 
 def run_vi(env_name: str, config: dict, seed: int):
-    """run value iteration on blackjack (cartpole not supported)"""
+    """run value iteration on blackjack or cartpole"""
     algo_name = 'vi'
-    
-    # only blackjack supported (cartpole vi skipped due to evaluation bugs)
-    if env_name != 'blackjack':
-        print(f"warning: {algo_name} on {env_name} not implemented (mdp evaluation issues)")
-        return 'skipped'
     
     # extract hyperparameters
     env_config = get_env_config(config, env_name)
-    natural = env_config.get('natural', False)
-    sab = env_config.get('sab', False)
     
     # vi specific params
     gamma = config.get(algo_name, {}).get('gamma', config.get('hyperparameters', {}).get('gamma', 0.99))
@@ -249,33 +263,67 @@ def run_vi(env_name: str, config: dict, seed: int):
     max_iterations = config.get(algo_name, {}).get('max_iterations', 10000)
     eval_episodes = config.get(algo_name, {}).get('eval_episodes', 100)
     
-    display_params = {
-        'gamma': gamma,
-        'theta': theta,
-        'max_iterations': max_iterations,
-        'natural': natural,
-        'sab': sab
-    }
-    
-    print_experiment_header(algo_name, env_name, seed, display_params)
-    set_all_seeds(seed)
-    
-    # create simplified mdp environment
-    env = SimplifiedBlackjackMDP()
-    print(f"blackjack state space: {env.num_states} states")
+    # environment-specific setup
+    if env_name == 'blackjack':
+        natural = env_config.get('natural', False)
+        sab = env_config.get('sab', False)
+        
+        display_params = {
+            'gamma': gamma,
+            'theta': theta,
+            'max_iterations': max_iterations,
+            'natural': natural,
+            'sab': sab
+        }
+        
+        print_experiment_header(algo_name, env_name, seed, display_params)
+        set_all_seeds(seed)
+        
+        env = SimplifiedBlackjackMDP()
+        print(f"blackjack state space: {env.num_states} states")
+        
+    elif env_name == 'cartpole':
+        # cartpole discretization params - use vi_bins for value iteration
+        bins = env_config.get('vi_bins', env_config.get('bins', [3, 3, 6, 8]))
+        samples_per_sa = env_config.get('samples_per_sa', 50)
+        
+        display_params = {
+            'gamma': gamma,
+            'theta': theta,
+            'max_iterations': max_iterations,
+            'bins': bins,
+            'samples_per_sa': samples_per_sa
+        }
+        
+        print_experiment_header(algo_name, env_name, seed, display_params)
+        set_all_seeds(seed)
+        
+        from environments.cartpole_mdp import SimplifiedCartPoleMDP
+        env = SimplifiedCartPoleMDP(bins=bins, samples_per_sa=samples_per_sa, seed=seed)
+        print(f"cartpole discrete state space: {env.num_states} states")
+        
+    else:
+        print(f"error: {env_name} not supported for {algo_name}")
+        return 'skipped'
     
     # setup metadata
     metadata = {
         'algorithm': 'value_iteration',
-        'environment': 'Blackjack-v1',
+        'environment': f'{env_name.title()}-v1',
         'seed': seed,
         'gamma': gamma,
         'theta': theta,
         'max_iterations': max_iterations,
         'eval_episodes': eval_episodes,
-        'natural': natural,
-        'sab': sab,
     }
+    
+    # add environment-specific metadata
+    if env_name == 'blackjack':
+        metadata['natural'] = display_params['natural']
+        metadata['sab'] = display_params['sab']
+    elif env_name == 'cartpole':
+        metadata['bins'] = display_params['bins']
+        metadata['samples_per_sa'] = display_params['samples_per_sa']
     
     # run algorithm
     print(f"running value iteration (gamma={gamma}, theta={theta})...")
@@ -330,22 +378,20 @@ def run_vi(env_name: str, config: dict, seed: int):
         
         logger.update_metadata({'summary': summary})
         print(f"results saved to {logger.log_file}")
+        
+        # save value function and policy for visualization
+        save_dp_artifacts(output_dir, algo_name, env_name, seed, 
+                         solver.V, solver.policy)
+        
     return 'success'
 
 
 def run_pi(env_name: str, config: dict, seed: int):
-    """run policy iteration on blackjack (cartpole not supported)"""
+    """run policy iteration on blackjack or cartpole"""
     algo_name = 'pi'
-    
-    # only blackjack supported (cartpole pi skipped due to evaluation bugs)
-    if env_name != 'blackjack':
-        print(f"warning: {algo_name} on {env_name} not implemented (mdp evaluation issues)")
-        return 'skipped'
     
     # extract hyperparameters
     env_config = get_env_config(config, env_name)
-    natural = env_config.get('natural', False)
-    sab = env_config.get('sab', False)
     
     # pi specific params
     gamma = config.get(algo_name, {}).get('gamma', config.get('hyperparameters', {}).get('gamma', 0.99))
@@ -354,35 +400,70 @@ def run_pi(env_name: str, config: dict, seed: int):
     max_eval_iterations = config.get(algo_name, {}).get('max_eval_iterations', 1000)
     eval_episodes = config.get(algo_name, {}).get('eval_episodes', 100)
     
-    display_params = {
-        'gamma': gamma,
-        'theta': theta,
-        'max_iterations': max_iterations,
-        'max_eval_iterations': max_eval_iterations,
-        'natural': natural,
-        'sab': sab
-    }
-    
-    print_experiment_header(algo_name, env_name, seed, display_params)
-    set_all_seeds(seed)
-    
-    # create simplified mdp environment
-    env = SimplifiedBlackjackMDP()
-    print(f"blackjack state space: {env.num_states} states")
+    # environment-specific setup
+    if env_name == 'blackjack':
+        natural = env_config.get('natural', False)
+        sab = env_config.get('sab', False)
+        
+        display_params = {
+            'gamma': gamma,
+            'theta': theta,
+            'max_iterations': max_iterations,
+            'max_eval_iterations': max_eval_iterations,
+            'natural': natural,
+            'sab': sab
+        }
+        
+        print_experiment_header(algo_name, env_name, seed, display_params)
+        set_all_seeds(seed)
+        
+        env = SimplifiedBlackjackMDP()
+        print(f"blackjack state space: {env.num_states} states")
+        
+    elif env_name == 'cartpole':
+        # cartpole discretization params - use pi_bins for policy iteration
+        bins = env_config.get('pi_bins', env_config.get('bins', [3, 3, 6, 8]))
+        samples_per_sa = env_config.get('samples_per_sa', 50)
+        
+        display_params = {
+            'gamma': gamma,
+            'theta': theta,
+            'max_iterations': max_iterations,
+            'max_eval_iterations': max_eval_iterations,
+            'bins': bins,
+            'samples_per_sa': samples_per_sa
+        }
+        
+        print_experiment_header(algo_name, env_name, seed, display_params)
+        set_all_seeds(seed)
+        
+        from environments.cartpole_mdp import SimplifiedCartPoleMDP
+        env = SimplifiedCartPoleMDP(bins=bins, samples_per_sa=samples_per_sa, seed=seed)
+        print(f"cartpole discrete state space: {env.num_states} states")
+        
+    else:
+        print(f"error: {env_name} not supported for {algo_name}")
+        return 'skipped'
     
     # setup metadata
     metadata = {
         'algorithm': 'policy_iteration',
-        'environment': 'Blackjack-v1',
+        'environment': f'{env_name.title()}-v1',
         'seed': seed,
         'gamma': gamma,
         'theta': theta,
         'max_iterations': max_iterations,
         'max_eval_iterations': max_eval_iterations,
         'eval_episodes': eval_episodes,
-        'natural': natural,
-        'sab': sab,
     }
+    
+    # add environment-specific metadata
+    if env_name == 'blackjack':
+        metadata['natural'] = display_params['natural']
+        metadata['sab'] = display_params['sab']
+    elif env_name == 'cartpole':
+        metadata['bins'] = display_params['bins']
+        metadata['samples_per_sa'] = display_params['samples_per_sa']
     
     # run algorithm
     print(f"running policy iteration (gamma={gamma}, theta={theta})...")
@@ -432,13 +513,18 @@ def run_pi(env_name: str, config: dict, seed: int):
                 'mean_return': eval_results['mean_return'],
                 'std_return': eval_results['std_return'],
                 'mean_length': eval_results['mean_length'],
-                'q1': float(eval_results['returns'][int(len(eval_results['returns']) * 0.25)]),
+                'q3': float(eval_results['returns'][int(len(eval_results['returns']) * 0.25)]),
                 'q3': float(eval_results['returns'][int(len(eval_results['returns']) * 0.75)]),
             }
         }
         
         logger.update_metadata({'summary': summary})
         print(f"results saved to {logger.log_file}")
+        
+        # save value function and policy for visualization
+        save_dp_artifacts(output_dir, algo_name, env_name, seed, 
+                         solver.V, solver.policy)
+        
     return 'success'
 
 

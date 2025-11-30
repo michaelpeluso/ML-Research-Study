@@ -5,49 +5,77 @@
 # ==============================================================================
 smoke_test: false
 
+# clean up stale results from previous runs before starting new experiments
+clean_previous_results: true
+
 # experiment control
 experiments:
     run_all: true
     algorithms: ["sarsa", "qlearning", "vi", "pi"]
     environments: ["cartpole", "blackjack"]
 
-# ==============================================================================
-# PRODUCTION SETTINGS (smoke_test: false)
-# ==============================================================================
-# seeds: 50 independent runs for statistical validity (report requirement: 30-50)
-# episodes: 10000 for proper convergence (report recommendation)
-# estimated wall-clock: ~20-30 minutes for full suite (4 algos × 2 envs × 50 seeds)
+# parallelization control
+# n_jobs: number of parallel workers for experiments
+#   1  = sequential execution (safer, easier debugging)
+#   -1 = use all CPU cores (fastest)
+#   -2 = use all cores except 1 (leaves system responsive)
+#   N  = use specific number of workers (e.g., 4)
+# note: each worker runs complete experiments independently
+# speedup: typically 4-16x on modern CPUs (depends on core count)
+n_jobs: -2  # conservative default - change to -1 for production runs
 
-# ==============================================================================
-# SMOKE TEST SETTINGS (smoke_test: true)
-# ==============================================================================
-# seeds: 2 quick validation runs
-# episodes: 100 for rapid iteration
-# estimated wall-clock: ~30-60 seconds
 
-seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34]
-seeds_smoke: [0, 1]
+# SARSA/Q-Learning seeds (30-50 required per report)
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39]
 
-# shared hyperparameters (can override per algorithm)
+# VI/PI seeds (optional - demonstrates robustness to environment stochasticity)
+seeds_vi_pi: [0, 1, 2, 3, 4]
+
+seeds_smoke: [0, 1, 2, 3, 4]  # 5 seeds for better curves
+
+# shared hyperparameters
+# NOTE: alpha/gamma tuned via Stage 3 local refinement (±2× alpha, ±25% decay, sensitivity analysis)
+# source: src/experiments/hyperparam_search.py Stage 3 (Nov 25, 2025)
 hyperparameters:
-    alpha:              0.1     # learning rate
-    gamma:              0.99    # discount factor
-    epsilon:            0.1     # exploration rate
-    episodes:           10000   # training episodes (production)
-    episodes_smoke:     100     # training episodes (smoke test)
+    alpha:              0.1     # learning rate (overridden per algorithm below)
+    gamma:              0.99    # discount factor (overridden per algorithm below)
+    epsilon:            1.0     # initial exploration rate (decays to epsilon_floor)
+    episodes:           10000   # default training episodes (overridden per env below)
+    episodes_smoke:     5000    # training episodes (smoke test - enough to reach threshold)
+    
+    # environment-specific episode counts
+    # blackjack: stochastic, converges ~6k episodes, use 50k for full policy refinement
+    # cartpole: deterministic, converges ~4k episodes, 10k is sufficient
+    episodes_blackjack: 50000   # 50k episodes for blackjack (safe margin over 6k convergence)
+    episodes_cartpole:  10000   # 10k episodes for cartpole (sufficient for convergence)
 
-# algorithm-specific overrides
+# algorithm-specific overrides (from Stage 3 local refinement - Nov 29, 2025)
+# NOTE: hyperparam search ran at production scale (5k/15k/50k blackjack, 1k/3k/10k cartpole)
 sarsa:
-    epsilon_decay:      0.995   # multiplicative decay per episode
-    epsilon_floor:      0.01    # minimum exploration rate
-    alpha_decay:        0.9995  # multiplicative decay per episode
-    alpha_floor:        0.01    # minimum learning rate
+    # BLACKJACK (stage 3): mean_return=-0.103, 50k episodes
+    alpha_blackjack:    0.037   # learning rate (validated at production scale)
+    gamma_blackjack:    0.9709  # discount factor
+    epsilon_floor_blackjack: 0.0061  # minimum exploration
+    epsilon_decay_episodes_blackjack: 9927  # ~20% of 50k episodes
+    
+    # CARTPOLE (stage 3): mean_return=241.6, 10k episodes
+    alpha_cartpole:     0.037   # learning rate
+    gamma_cartpole:     0.9709  # discount factor
+    epsilon_floor_cartpole: 0.0061  # minimum exploration
+    epsilon_decay_episodes_cartpole: 3308  # ~33% of 10k episodes
 
 qlearning:
-    epsilon_decay:      0.995   # multiplicative decay per episode
-    epsilon_floor:      0.01    # minimum exploration rate
-    alpha_decay:        0.9995  # multiplicative decay per episode
-    alpha_floor:        0.01    # minimum learning rate
+    # BLACKJACK (stage 3): mean_return=-0.103, 50k episodes
+    alpha_blackjack:    0.037   # learning rate (validated at production scale)
+    gamma_blackjack:    0.9709  # discount factor
+    epsilon_floor_blackjack: 0.0061  # minimum exploration  
+    epsilon_decay_episodes_blackjack: 9927  # ~20% of 50k episodes
+    
+    # CARTPOLE (stage 3): mean_return=248.9, 10k episodes
+    alpha_cartpole:     0.037   # learning rate
+    gamma_cartpole:     0.9709  # discount factor
+    epsilon_floor_cartpole: 0.0061  # minimum exploration
+    epsilon_decay_episodes_cartpole: 3308  # ~33% of 10k episodes
 
 # value iteration settings
 vi:
@@ -66,10 +94,21 @@ pi:
 
 # environment settings
 cartpole:
+
+    # [4, 4, 10, 12]
+    # ↑  ↑   ↑   ↑
+    # │  │   │   └── bins for angular velocity (most critical for dynamics)
+    # │  │   └────── bins for angle (critical for balance)
+    # │  └────────── bins for cart velocity (less important)
+    # └───────────── bins for cart position (least important)
+
     # production discretization (balance between resolution and compute)
     bins:       [3, 3, 8, 12]   # [x, x_dot, theta, theta_dot] for sarsa/qlearning
-    vi_bins:    [3, 3, 6, 8]    # coarser for vi (faster transition model)
-    pi_bins:    [3, 3, 6, 8]    # coarser for pi (faster transition model)
+    
+    # VI/PI discretization
+    vi_bins:    [4, 4, 10, 12]  # optimal from ablation (1920 states)
+    pi_bins:    [4, 4, 10, 12]  # optimal from ablation (1920 states)
+    samples_per_sa: 50          # monte carlo samples for vi/pi transition estimation
     
     # state space clamps (report recommendation)
     x_bounds:           [-2.4, 2.4]
