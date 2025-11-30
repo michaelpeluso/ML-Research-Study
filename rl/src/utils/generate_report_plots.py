@@ -9,12 +9,17 @@ usage:
     python -c "from utils.generate_report_plots import generate_all_plots; generate_all_plots()"
 """
 import json
+import yaml
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
 from typing import Dict, Optional
+from matplotlib.patches import Polygon
+import matplotlib.colors as mcolors
+import gymnasium as gym
+from environments.cartpole_discretizer import StateDiscretizer
 
 # publication-quality settings
 plt.style.use('seaborn-v0_8-paper')
@@ -358,8 +363,6 @@ def plot_blackjack_policy_heatmap(results_dir: Path, output_dir: Path):
     color: green (high value) to red (low value)
     text: S = STICK, H = HIT
     """
-    from matplotlib.patches import Polygon
-    import matplotlib.colors as mcolors
     
     # state space definition: player_sum 12-21, dealer 1-10, usable_ace (200 states)
     def build_state_space():
@@ -385,9 +388,9 @@ def plot_blackjack_policy_heatmap(results_dir: Path, output_dir: Path):
     ]
     
     # === 2x2 GRID: Policy (S/H) with Value (color) ===
-    fig, axes = plt.subplots(2, 2, figsize=(16, 14))
+    fig, axes = plt.subplots(2, 2, figsize=(18, 16))
     axes = axes.flatten()
-    plt.subplots_adjust(wspace=0.15, hspace=0.25)
+    plt.subplots_adjust(wspace=0.12, hspace=0.22)
     
     # get value ranges for colormap normalization (from all algorithms)
     all_values = []
@@ -511,23 +514,23 @@ def plot_blackjack_policy_heatmap(results_dir: Path, output_dir: Path):
                 text_ace = 'H' if action_ace == 1 else 'S'
                 
                 ax.text(j - 0.22, i - 0.22, text_no_ace, ha='center', va='center',
-                       fontsize=7, fontweight='bold', color='black')
+                       fontsize=9, fontweight='bold', color='black')
                 ax.text(j + 0.22, i + 0.22, text_ace, ha='center', va='center',
-                       fontsize=7, fontweight='bold', color='black')
+                       fontsize=9, fontweight='bold', color='black')
         
         # set axis limits and appearance
         ax.set_xlim(-0.5, len(dealer_showing) - 0.5)
         ax.set_ylim(len(player_sums) - 0.5, -0.5)
         
         ax.set_xticks(range(len(dealer_showing)))
-        ax.set_xticklabels(['A'] + list(range(2, 11)), fontsize=10)
-        ax.set_xlabel('Dealer Showing', fontsize=11, fontweight='bold')
+        ax.set_xticklabels(['A'] + list(range(2, 11)), fontsize=12)
+        ax.set_xlabel('Dealer Showing', fontsize=13, fontweight='bold')
         
         ax.set_yticks(range(len(player_sums)))
-        ax.set_yticklabels(player_sums, fontsize=9)
-        ax.set_ylabel('Player Sum', fontsize=11, fontweight='bold')
+        ax.set_yticklabels(player_sums, fontsize=11)
+        ax.set_ylabel('Player Sum', fontsize=13, fontweight='bold')
         
-        ax.set_title(algo_name, fontsize=13, fontweight='bold', pad=10)
+        ax.set_title(algo_name, fontsize=15, fontweight='bold', pad=10)
         
         for x in np.arange(-0.5, len(dealer_showing), 1):
             ax.axvline(x, color='gray', linewidth=0.5, alpha=0.5)
@@ -541,13 +544,13 @@ def plot_blackjack_policy_heatmap(results_dir: Path, output_dir: Path):
     sm.set_array([])
     cbar_ax = fig.add_axes([0.93, 0.08, 0.02, 0.84])  # [left, bottom, width, height]
     cbar = fig.colorbar(sm, cax=cbar_ax, orientation='vertical')
-    cbar.set_label('State Value V(s)\n(Expected Return: Win=+1, Lose=-1)', fontsize=10)
+    cbar.set_label('State Value V(s)\n(Expected Return: Win=+1, Lose=-1)', fontsize=12)
     
     # main title (bold) and subtitle key (not bold) - centered
     fig.text(0.52, 0.97, 'Blackjack Optimal Policy & State Value Heatmaps',
-            ha='center', fontsize=18, fontweight='bold')
+            ha='center', fontsize=20, fontweight='bold')
     fig.text(0.52, 0.955, 'Upper-left ◸ = No Usable Ace  |  Lower-right ◿ = Usable Ace  |  S = STICK, H = HIT  |  Color = State Value',
-            ha='center', fontsize=10, style='italic')
+            ha='center', fontsize=12, style='italic')
     
     plt.subplots_adjust(top=0.92)
     output_path = output_dir / 'blackjack_heatmap.png'
@@ -1484,11 +1487,13 @@ def generate_optional_plots(results_dir: Optional[Path] = None, output_dir: Opti
 
 def generate_all_plots(results_dir: Optional[Path] = None, output_dir: Optional[Path] = None):
     """generate all required plots for rl report 
-    creates 3-4 publication-quality visualizations:
+    creates 6 publication-quality visualizations:
     - model-free learning curves (sarsa vs qlearning)
     - blackjack policy heatmaps (all 4 algorithms)
+    - cartpole policy heatmaps (angle vs angular velocity)
+    - cartpole q-value differences (action preferences)
+    - cartpole intuitive summary (key scenarios explained)
     - final performance comparison bar chart
-    - cartpole episode length (optional, can merge into learning curves)
     """
     if results_dir is None:
         results_dir = Path(__file__).parent.parent.parent / 'results'
@@ -1516,7 +1521,10 @@ def generate_all_plots(results_dir: Optional[Path] = None, output_dir: Optional[
     # === PLOT 2: Blackjack Policy Heatmaps ===
     plot_blackjack_policy_heatmap(results_dir, output_dir)      # 2x2: all 4 algorithms' policies
     
-    # === PLOT 3: Final Performance Comparison ===
+    # === PLOT 3: CartPole Learned Strategy (SIMPLE & INTUITIVE) ===
+    plot_cartpole_simple_visualization(results_dir, output_dir) # 2x2: simple bar charts showing learned strategy
+    
+    # === PLOT 4: Final Performance Comparison ===
     plot_final_performance_comparison(results_dir, output_dir)  # bar chart: all algos × both envs
     
     # NOTE: CartPole episode length plot REMOVED - redundant with learning curves
@@ -1526,10 +1534,11 @@ def generate_all_plots(results_dir: Optional[Path] = None, output_dir: Optional[
     print("COMPLETE - Report Plots Generated")
     print("="*60)
     print(f"location: {output_dir}\n")
-    print("PLOTS GENERATED (3 total):")
+    print("PLOTS GENERATED (4 total):")
     print("  1. model_free_learning_curves.png     - SARSA/Q-Learning returns (1x2)")
     print("  2. blackjack_heatmap.png              - Policy heatmap (all 4 algorithms)")
-    print("  3. final_performance_comparison.png   - Bar chart all algorithms")
+    print("  3. cartpole_learned_strategy.png      - Simple bar charts: learned strategy (2x2)")
+    print("  4. final_performance_comparison.png   - Bar chart all algorithms")
     print("\nNOTE: VI/PI convergence data should be presented as a TABLE in your report:")
     print("  | Env       | Algo | Outer Iter | Eval Sweeps | Total |")
     print("  | Blackjack | VI   | 7          | -           | 7     |")
@@ -1550,7 +1559,6 @@ def export_summary_csvs(results_dir: Path, output_dir: Path):
     3. hyperparameters.csv - All algorithm configurations used
     4. experiment_statistics.csv - Per-algorithm seed counts and wall-clock
     """
-    import yaml
     
     csv_dir = output_dir / 'tables'
     csv_dir.mkdir(parents=True, exist_ok=True)
@@ -1714,6 +1722,156 @@ def export_summary_csvs(results_dir: Path, output_dir: Path):
         print(f"  saved: {stats_path}")
     
     print(f"\nCSV tables saved to: {csv_dir}")
+
+
+def plot_cartpole_simple_visualization(results_dir: Path, output_dir: Path):
+    """CartPole policy heatmap visualization matching blackjack style.
+    
+    Creates a 2x2 grid showing each algorithm's learned policy:
+    - X-axis: Pole angle θ (degrees)
+    - Y-axis: Angular velocity θ̇ (degrees/second)
+    - Color: Blue = Push Left, Red = Push Right
+    - Text: L = Left, R = Right (majority action)
+    - Gray background: Unvisited states (model-free only)
+    """
+    
+    # create environment and discretizer
+    env = gym.make('CartPole-v1')
+    discretizer = StateDiscretizer(env, bins=[4, 4, 10, 12])
+    
+    # algorithm configs - same order as blackjack (VI, PI top row; SARSA, Q-Learning bottom)
+    algos = [
+        ('vi', 'Value Iteration (VI)', True),
+        ('pi', 'Policy Iteration (PI)', True),
+        ('sarsa', 'SARSA (On-Policy)', False),
+        ('qlearning', 'Q-Learning (Off-Policy)', False),
+    ]
+    
+    # custom diverging colormap: blue (Push Left) - white - red (Push Right)
+    # using a lighter version for better readability
+    cmap = plt.cm.coolwarm  # lighter blue-white-red colormap
+    
+    # figure sized to accommodate 10x12 heatmaps with minimal whitespace
+    fig, axes = plt.subplots(2, 2, figsize=(14, 16))
+    axes = axes.flatten()
+    plt.subplots_adjust(wspace=0.25, hspace=0.20, left=0.08, right=0.88)
+    
+    n_theta = discretizer.bins[2]      # 10 angle bins
+    n_thetadot = discretizer.bins[3]   # 12 angular velocity bins
+    
+    # get theta and theta_dot bin edges for axis labels
+    theta_edges = discretizer.bin_edges[2]
+    thetadot_edges = discretizer.bin_edges[3]
+    
+    for idx, (algo, algo_name, is_model_based) in enumerate(algos):
+        ax = axes[idx]
+        
+        # load policy
+        data_dir = results_dir / algo / 'cartpole'
+        policy_files = sorted(data_dir.glob(f'{algo}_cartpole_seed*_policy.npy'))
+        
+        if not policy_files:
+            ax.text(0.5, 0.5, f'No data', ha='center', va='center', 
+                   transform=ax.transAxes, fontsize=12)
+            continue
+        
+        policy_data = np.load(policy_files[0], allow_pickle=True)
+        
+        # build policy matrix: theta (angle) x theta_dot (angular velocity)
+        # aggregate over cart position (x) and cart velocity (x_dot)
+        policy_matrix = np.full((n_thetadot, n_theta), np.nan)
+        count_matrix = np.zeros((n_thetadot, n_theta))
+        
+        if is_model_based:
+            # model-based: all states have a policy
+            for x_idx in range(discretizer.bins[0]):
+                for xdot_idx in range(discretizer.bins[1]):
+                    for theta_idx in range(n_theta):
+                        for thetadot_idx in range(n_thetadot):
+                            state_idx = discretizer.tuple_to_index((x_idx, xdot_idx, theta_idx, thetadot_idx))
+                            action = int(policy_data[state_idx])
+                            if np.isnan(policy_matrix[thetadot_idx, theta_idx]):
+                                policy_matrix[thetadot_idx, theta_idx] = 0
+                            policy_matrix[thetadot_idx, theta_idx] += action
+                            count_matrix[thetadot_idx, theta_idx] += 1
+            policy_matrix = policy_matrix / count_matrix
+        else:
+            # model-free: only visited states
+            policy_dict = policy_data.item() if hasattr(policy_data, 'item') else policy_data
+            for state_tuple, action in policy_dict.items():
+                x_idx, xdot_idx, theta_idx, thetadot_idx = state_tuple
+                if np.isnan(policy_matrix[thetadot_idx, theta_idx]):
+                    policy_matrix[thetadot_idx, theta_idx] = 0
+                    count_matrix[thetadot_idx, theta_idx] = 0
+                policy_matrix[thetadot_idx, theta_idx] += action
+                count_matrix[thetadot_idx, theta_idx] += 1
+            mask = count_matrix > 0
+            policy_matrix[mask] = policy_matrix[mask] / count_matrix[mask]
+        
+        # create heatmap with proper masked array
+        masked_policy = np.ma.masked_invalid(policy_matrix)
+        
+        # set gray background for unvisited states
+        ax.set_facecolor('#e0e0e0')
+        
+        im = ax.imshow(masked_policy, cmap=cmap, vmin=0, vmax=1, 
+                       aspect='auto', origin='lower', interpolation='nearest')
+        
+        # add text labels showing L (left) or R (right) for each cell
+        for i in range(n_thetadot):
+            for j in range(n_theta):
+                if not np.isnan(policy_matrix[i, j]):
+                    action_val = policy_matrix[i, j]
+                    # show L or R based on majority action
+                    label = 'R' if action_val > 0.5 else 'L'
+                    # text color: black for readability
+                    ax.text(j, i, label, ha='center', va='center',
+                           fontsize=9, fontweight='bold', color='black')
+        
+        # x-axis: theta (pole angle)
+        ax.set_xticks(range(n_theta))
+        theta_labels = [f'{np.degrees((theta_edges[i]+theta_edges[i+1])/2):.0f}°' 
+                       for i in range(n_theta)]
+        ax.set_xticklabels(theta_labels, fontsize=11)
+        ax.set_xlabel('Pole Angle θ', fontsize=13, fontweight='bold')
+        
+        # y-axis: theta_dot (angular velocity)  
+        ax.set_yticks(range(n_thetadot))
+        thetadot_labels = [f'{np.degrees((thetadot_edges[i]+thetadot_edges[i+1])/2):.0f}°/s' 
+                         for i in range(n_thetadot)]
+        ax.set_yticklabels(thetadot_labels, fontsize=10)
+        ax.set_ylabel('Angular Velocity θ̇', fontsize=13, fontweight='bold')
+        
+        ax.set_title(algo_name, fontsize=15, fontweight='bold', pad=10)
+        
+        # add grid lines for clarity
+        for x in np.arange(-0.5, n_theta, 1):
+            ax.axvline(x, color='gray', linewidth=0.5, alpha=0.5)
+        for y in np.arange(-0.5, n_thetadot, 1):
+            ax.axhline(y, color='gray', linewidth=0.5, alpha=0.5)
+    
+    # vertical colorbar on the right
+    cbar_ax = fig.add_axes([0.90, 0.08, 0.02, 0.84])
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=0, vmax=1))
+    sm.set_array([])
+    cbar = fig.colorbar(sm, cax=cbar_ax, orientation='vertical')
+    cbar.set_ticks([0, 0.5, 1])
+    cbar.set_ticklabels(['Push Left (L)', 'Mixed', 'Push Right (R)'])
+    cbar.ax.tick_params(labelsize=11, labelrotation=90)
+    cbar.set_label('Action Probability (Aggregated over cart position/velocity)', fontsize=12)
+    
+    # main title and subtitle
+    fig.text(0.48, 0.97, 'CartPole Learned Policy Heatmaps',
+            ha='center', fontsize=20, fontweight='bold')
+    fig.text(0.48, 0.955, 'L = Push Left  |  R = Push Right  |  Color = Action Probability  |  Gray = Unvisited States',
+            ha='center', fontsize=12, style='italic')
+    
+    plt.subplots_adjust(top=0.92)
+    output_path = output_dir / 'cartpole_learned_strategy.png'
+    fig.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    
+    print(f"saved: {output_path}")
 
 
 if __name__ == '__main__':

@@ -1,454 +1,346 @@
-# Reinforcement Learning: Algorithm Comparison Study
+# Reinforcement Learning Algorithm Comparison
 
-## CS 7641 - Machine Learning
+**Georgia Institute of Technology: CS 7641 Machine Learning — Fall 2025**
 
-Comprehensive implementation and experimental analysis of four RL algorithms on two environments.
+Experimental analysis of Value Iteration, Policy Iteration, SARSA, and Q-Learning on Blackjack and CartPole MDPs.
 
-## 🎯 Overview
+---
 
-This project implements and compares reinforcement learning algorithms across two domains:
+## Overview
 
--   **Blackjack** (discrete, stochastic MDP)
--   **CartPole** (continuous → discretized, deterministic dynamics)
+This project implements and compares four reinforcement learning algorithms across two environments with distinct characteristics:
 
-### Algorithms Implemented
+| Environment | State Space | Dynamics | Algorithms |
+|-------------|-------------|----------|------------|
+| **Blackjack** | Discrete (200 states) | Stochastic | VI, PI, SARSA, Q-Learning |
+| **CartPole** | Continuous → Discretized | Deterministic | VI, PI, SARSA, Q-Learning |
 
-| Algorithm | Type | Status | Environments |
-|-----------|------|--------|--------------|
-| **SARSA** | On-policy TD | ✅ Complete | Blackjack, CartPole |
-| **Q-Learning** | Off-policy TD | ✅ Complete | Blackjack, CartPole |
-| **Value Iteration** | Model-based DP | ✅ Complete | Blackjack, CartPole |
-| **Policy Iteration** | Model-based DP | ✅ Complete | Blackjack, CartPole |
+**Key Comparisons:**
+- Model-based (VI, PI) vs. Model-free (SARSA, Q-Learning)
+- On-policy (SARSA) vs. Off-policy (Q-Learning)
+- Convergence rates, sample efficiency, stability, and final return
 
-## 📁 Project Structure
+---
+
+## Quick Start
+
+```bash
+# install dependencies
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+# run all experiments 
+cd src && python main.py
+
+# smoke test: 5 seeds, ~10 min
+# edit src/config/default.yaml: smoke_test: true
+cd src && python main.py
+```
+
+**Output:**
+- `results/raw/{algo}/{env}/` — per-seed CSV metrics + JSON metadata + .npy artifacts
+- `results/figures/` — visual plots
+
+---
+
+## Project Structure
 
 ```
 rl/
-├── src/                          # Source code
-│   ├── algorithms/               # RL implementations (SARSA, Q-Learning, VI, PI)
-│   ├── environments/             # Env wrappers and MDPs
-│   ├── experiments/              # Experiment runners
-│   ├── utils/                    # Logging, plotting, aggregation
-│   ├── config/                   # YAML configurations
-│   └── main.py                   # Single entry point
-│
-├── results/                      # Experimental outputs
-│   ├── raw/                      # Per-seed data (CSV, JSON, .npy artifacts)
-│   ├── figures/                  # Publication-quality plots
-│   └── hyperparam_search/        # Hyperparameter optimization
-│
-├── docs/                         # Documentation
-│   ├── DATA_ORGANIZATION.md      # ⭐ Data structure guide
-│   ├── ARCHITECTURE.md           # System design
-│   ├── PRODUCTION_GUIDE.md       # Deployment
-│   └── USAGE.md                  # Detailed usage
-│
-└── resources/                    # Reference materials
-    └── RL_Report.md              # Assignment requirements
+├── src/
+│   ├── main.py                    # single entry point
+│   ├── algorithms/                # VI, PI, SARSA, Q-Learning
+│   ├── environments/              # wrappers, discretizers, MDPs
+│   ├── experiments/               # runners, hyperparameter search
+│   ├── utils/                     # logging, plotting, aggregation
+│   └── config/
+│       ├── default.yaml           # hyperparameters, seeds, episodes
+│       └── hyperparam_ranges.yaml # staged search configuration
+└── results/
+    ├── raw/                       # per-seed data
+    ├── figures/                   # generated plots
+    └── hyperparam_search/         # tuning results
 ```
 
-See **`docs/DATA_ORGANIZATION.md`** for complete file structure and data flow.
+---
 
-## 🚀 Quick Start
+## Algorithms
 
-### Installation
+### Model-Based Dynamic Programming
 
-```bash
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+These algorithms require complete knowledge of the MDP (transition probabilities P(s'|s,a) and reward function). They compute optimal policies through iterative sweeps over the entire state space.
 
-# Install dependencies
-pip install -r requirements.txt
+**Value Iteration (VI)**
+
+Iteratively applies the Bellman optimality equation until the value function converges:
+
+```
+V(s) ← max_a Σ_s' P(s'|s,a)[R(s,a,s') + γV(s')]
 ```
 
-### Running Experiments
+- **Convergence criterion:** `max_s |V_{k+1}(s) - V_k(s)| < θ` (default θ = 1e-6)
+- **Implementation:** `src/algorithms/value_iteration.py`
+- **Tracked metrics:** Iterations to converge, max delta per sweep, wall-clock time
+- **Complexity:** `O(|S|²|A|)` per iteration
 
-**Full experimental suite (all algorithms × environments × seeds):**
+**Policy Iteration (PI)**
 
-```bash
-cd src
-python main.py
+Alternates between policy evaluation (computing V^π) and policy improvement (making policy greedy w.r.t. V^π):
+
+```
+1. Policy Evaluation:  V^π(s) ← Σ_s' P(s'|s,π(s))[R + γV^π(s')]  (until convergence)
+2. Policy Improvement: π(s) ← argmax_a Σ_s' P(s'|s,a)[R + γV^π(s')]
+3. Repeat until π is stable
 ```
 
-This executes:
-- 4 algorithms (SARSA, Q-Learning, VI, PI)
-- 2 environments (Blackjack, CartPole)
-- 5 seeds (default smoke test)
-- **Total: 40 experiments** in ~10 minutes
+- **Convergence criterion:** Policy unchanged between iterations
+- **Implementation:** `src/algorithms/policy_iteration.py`
+- **Tracked metrics:** Policy improvement iterations, evaluation iterations per step, states changed per iteration
+- **Typically faster:** Fewer outer iterations than VI (often 3-7 vs 20-50)
 
-**Production run (30-50 seeds for statistical significance):**
+### Model-Free Temporal Difference Learning
+
+These algorithms learn directly from experience without requiring a model. They update Q-values incrementally after each transition using bootstrapped targets.
+
+**SARSA (On-Policy TD)**
+
+Updates Q-values using the action *actually taken* in the next state (follows the behavior policy):
+
+```
+Q(s,a) ← Q(s,a) + α[r + γQ(s',a') - Q(s,a)]
+                    └────────────┘
+                       TD target (uses a' from policy)
+```
+
+- **On-policy:** Learns the value of the policy being followed (including exploration)
+- **Exploration:** ε-greedy with linear decay (ε: 1.0 → 0.01 over configurable episodes)
+- **Implementation:** `src/algorithms/sarsa.py`
+- **Tracked metrics:** Episode returns, TD errors, Q-table changes, exploration ratio, policy entropy
+
+**Q-Learning (Off-Policy TD)**
+
+Updates Q-values using the *best possible* action in the next state (learns optimal policy regardless of behavior):
+
+```
+Q(s,a) ← Q(s,a) + α[r + γ max_a' Q(s',a') - Q(s,a)]
+                    └───────────────────┘
+                       TD target (uses max over all a')
+```
+
+- **Off-policy:** Learns optimal Q* while following exploratory policy
+- **Key difference:** Target uses max (greedy) rather than actual next action
+- **Implementation:** `src/algorithms/q_learning.py`
+- **Tracked metrics:** Same as SARSA for fair comparison
+
+### Algorithm Comparison
+
+| Property | VI | PI | SARSA | Q-Learning |
+|----------|----|----|-------|------------|
+| **Type** | Model-based | Model-based | Model-free | Model-free |
+| **Policy** | — | — | On-policy | Off-policy |
+| **Requires P(s'\|s,a)** | Yes | Yes | No | No |
+| **Update** | Full sweep | Full sweep | Per transition | Per transition |
+| **Convergence** | Guaranteed | Guaranteed | Asymptotic | Asymptotic |
+
+### Exploration Strategy
+
+Both SARSA and Q-Learning use **ε-greedy exploration** with linear decay:
+
+```
+ε(t) = max(ε_floor, ε_start - (ε_start - ε_floor) * t / decay_episodes)
+```
+
+- **ε_start:** 1.0 (fully random initially)
+- **ε_floor:** 0.01 (maintain minimal exploration)
+- **decay_episodes:** 5000 (configurable)
+
+This ensures sufficient exploration early in training while converging to near-greedy behavior.
+
+---
+
+## Environments
+
+### Blackjack (Gymnasium: Blackjack-v1)
+
+A discrete, stochastic MDP based on the classic card game.
+
+**State space (200 states):**
+- Player's current sum (12–21, values below 12 always hit)
+- Dealer's showing card (1–10, where 1 = Ace)
+- Usable ace (boolean: can count ace as 11 without busting)
+
+**Action space:** Hit (draw card) or Stand (stop drawing)
+
+**Rewards:** +1 (win), -1 (lose), 0 (draw)
+
+**Stochasticity:** Card draws from infinite deck, dealer follows fixed policy (hit on ≤16)
+
+**Why interesting:** Tests algorithm behavior under inherent uncertainty where optimal play still loses due to house edge.
+
+### CartPole (Gymnasium: CartPole-v1)
+
+A continuous-state, deterministic physics simulation requiring state discretization for tabular methods.
+
+**Original state space (continuous):**
+- Cart position x ∈ [-4.8, 4.8]
+- Cart velocity ẋ ∈ (-∞, ∞)
+- Pole angle θ ∈ [-0.418, 0.418] rad
+- Angular velocity θ̇ ∈ (-∞, ∞)
+
+**Discretization (1,920 states):**
+
+| Feature | Clamp Range | Bins | Rationale |
+|---------|-------------|------|-----------|
+| Cart position (x) | [-2.4, 2.4] | 4 | Less critical for balance |
+| Cart velocity (ẋ) | [-3.0, 3.0] | 4 | Less critical for balance |
+| Pole angle (θ) | [-0.209, 0.209] rad | 10 | **Critical:** small angles matter |
+| Angular velocity (θ̇) | [-3.5, 3.5] | 12 | **Critical:** predicts future angle |
+
+**Action space:** Push left (0) or Push right (1)
+
+**Reward:** +1 per timestep pole remains upright (max 500 per episode)
+
+**Why interesting:** Tests discretization effects—coarse bins cause state aliasing where distinct physical states map to the same discrete state, degrading policy quality.
+
+### Model Construction for VI/PI
+
+Since VI and PI require explicit transition probabilities, we construct empirical MDPs:
+
+**Blackjack:** Transition model built analytically from game rules (infinite deck assumption allows exact P(s'|s,a) computation).
+
+**CartPole:** Empirical transition model via Monte Carlo sampling:
+1. For each discrete state s and action a, sample `N` transitions (default N=50)
+2. Count resulting discrete states s' to estimate P(s'|s,a)
+3. Average rewards to estimate R(s,a)
+
+This approach enables VI/PI on CartPole but introduces approximation error from discretization.
+
+---
+
+## Hyperparameter Validation
+
+Following the report requirement of **≥3 hyperparameters validated per algorithm**, tuning uses a staged search protocol:
+
+**Stage 1 — Coarse Random Search:**
+- Sample N=24 candidates from log-scaled ranges
+- Run pilot episodes (200), discard bottom 50% by interim return
+- Ranges: α ∈ [10⁻³, 1], γ ∈ [0.9, 0.999], ε_decay ∈ [1000, 20000]
+
+**Stage 2 — Successive Halving:**
+- Promote top 8 candidates, extend training to 600 episodes
+- Prune to top 3 by mean return
+
+**Stage 3 — Local Refinement:**
+- Narrow search around winners (±2× on α, ±25% on decay)
+- Final evaluation over 30-50 seeds
+
+**Validated hyperparameters per algorithm:**
+
+| Algorithm | Hyperparameters Validated |
+|-----------|---------------------------|
+| **VI** | γ (discount), θ (convergence threshold), discretization bins |
+| **PI** | γ (discount), θ (eval threshold), max_eval_iterations |
+| **SARSA** | α (learning rate), γ (discount), ε schedule (start, floor, decay) |
+| **Q-Learning** | α (learning rate), γ (discount), ε schedule (start, floor, decay) |
+
+Results stored in `results/hyperparam_search/stage{1,2,3}_{algo}_{env}_results.json`.
+
+---
+
+## Statistical Rigor
+
+All experiments use **30–50 independent random seeds** with unified seeding across `random`, `numpy`, and Gymnasium.
+
+**Seeding implementation** (`src/utils/seeding.py`):
+```python
+def set_all_seeds(seed: int, env=None):
+    random.seed(seed)
+    np.random.seed(seed)
+    if env:
+        env.reset(seed=seed)
+        env.action_space.seed(seed)
+```
+
+**Aggregation metrics:**
+- **Central tendency:** Mean, median
+- **Variability:** Standard deviation, IQR (Q3 - Q1), coefficient of variation
+- **Visualization:** Mean ± IQR bands on learning curves
+
+**Per-seed tracking (15+ metrics per episode):**
+- Episode return, episode length
+- TD error (mean, max), Q-table change magnitude
+- Exploration ratio (random vs greedy actions)
+- Policy entropy (action distribution uncertainty)
+- Cumulative reward, wall-clock time
+
+**Reproducibility guarantee:** Same seed → identical results across runs.
+
+---
+
+## Key Outputs
+
+### Raw Data (per seed)
+
+```
+results/raw/{algo}/{env}/
+├── {algo}_{env}_seed{N}.csv      # episode metrics
+├── {algo}_{env}_seed{N}.json     # metadata + summary stats
+├── {algo}_{env}_seed{N}_qtable.npy   # Q-table (SARSA/Q-Learning)
+├── {algo}_{env}_seed{N}_policy.npy   # learned policy
+└── {algo}_{env}_seed{N}_value.npy    # value function (VI/PI)
+```
+
+### Aggregated Results
+
+```
+results/raw/{algo}/master_summary_{algo}.json
+```
+
+Contains mean, std, median, Q1, Q3, IQR, convergence stats across all seeds.
+
+### Figures
+
+| Plot | Purpose |
+|------|---------|
+| `blackjack_heatmap.png` | Policy visualization (hit/stand by state) |
+| `cartpole_learned_strategy.png` | Action probabilities by angle/angular velocity |
+| `learning_curves_*.png` | Return vs. episode with IQR bands |
+| `convergence_*.png` | ΔV or ΔQ vs. iteration |
+
+---
+
+## Configuration
+
+Edit `src/config/default.yaml` to customize experiments:
 
 ```yaml
-# Edit src/config/default.yaml:
-smoke_test: false      # Enable full production mode
-seeds: [0, 1, ..., 49] # 50 seeds for robust statistics
-```
+smoke_test: false          # true = 5 seeds
+seeds: [0, 1, ..., 49]     # exact seed list
 
-```bash
-cd src
-python main.py  # ~2 hours for 400 experiments
-```
-
-## 📊 Results & Data Organization
-
-### Raw Data (Per Seed)
-
-```
-results/raw/{algorithm}/{environment}/
-├── {algo}_{env}_seed0.csv          # Episode/iteration metrics
-├── {algo}_{env}_seed0.json         # Metadata
-├── {algo}_{env}_seed0_qtable.npy   # Q-table (SARSA/Q-Learning)
-├── {algo}_{env}_seed0_policy.npy   # Extracted policy
-└── {algo}_{env}_seed0_value.npy    # Value function (VI/PI)
-```
-
-### Aggregated Summaries
-
-```
-results/raw/{algorithm}/
-└── master_summary.json  # Aggregated statistics across all seeds
-                         # (mean, std, IQR, quartiles, etc.)
-```
-
-### Visualizations
-
-```
-results/figures/
-├── learning_curves_comparison.png   # SARSA vs Q-Learning
-├── vi_pi_convergence.png           # VI vs PI analysis
-├── sample_efficiency.png            # Episodes to threshold
-├── stability_analysis.png           # Learning variability
-├── blackjack_policy_heatmap.png    # Learned policies
-└── ... (7 publication-quality plots)
-```
-
-## 📈 Key Features
-
-### 1. Comprehensive Data Capture
-- **15+ metrics per episode/iteration**: returns, TD errors, Q-changes, exploration, entropy
-- **30+ summary statistics**: mean, median, std, Q1, Q3, IQR, convergence indicators
-- **Learned artifacts saved**: Q-tables, policies, value functions (.npy format)
-
-### 2. Reproducibility
-- Unified seeding across `random`, `numpy`, and gymnasium
-- Configuration-driven experiments (no hardcoded hyperparameters)
-- Exact experiment replication via YAML configs
-
-### 3. Statistical Rigor
-- Multi-seed aggregation (30-50 seeds recommended)
-- IQR bands on learning curves
-- Coefficient of variation for stability analysis
-
-### 4. Model-Based Algorithms on Continuous Environments
-- **CartPole VI/PI**: Empirical transition model via Monte Carlo sampling
-- Discretization with [3, 3, 8, 12] bins → 864 discrete states
-- Successfully converges in ~2 iterations (VI) or 3 iterations (PI)
-
-## 🔧 Configuration
-
-### Default Settings (`src/config/default.yaml`)
-
-```yaml
-# Experiment setup
-smoke_test: true           # false for production (30-50 seeds)
-seeds: [0, 1, 2, 3, 4]    # Random seeds
 experiments:
   algorithms: [sarsa, qlearning, vi, pi]
   environments: [blackjack, cartpole]
 
-# Hyperparameters
 sarsa:
   blackjack: {alpha: 0.0011, gamma: 0.9511, epsilon: 1.0, episodes: 2000}
   cartpole: {alpha: 0.8123, gamma: 0.9908, epsilon: 1.0, episodes: 2000}
 
-# Environment config
 cartpole:
-  bins: [3, 3, 8, 12]      # Discretization
-  samples_per_sa: 50        # For VI/PI transition model
+  bins: [4, 4, 10, 12]     # discretization
+  samples_per_sa: 50       # for VI/PI transition model
 ```
 
-**Edit configs to customize experiments - no code changes needed!**
+---
 
-### Hyperparameter Optimization
+## References
 
-```bash
-cd src
-python -m experiments.hyperparam_search --algo sarsa --env blackjack
-```
+**References**
+- Sutton & Barto (2018), *Reinforcement Learning*: An Introduction (2nd ed.), Example 5.3 “Blackjack,” [online book](http://incompleteideas.net/book/RLbook2018.pdf). Gym Environment: [Blackjack-v1](https://gymnasium.farama.org/environments/toy_text/blackjack/).
 
-Uses staged search (coarse → successive halving → local refinement).
+- Barto, Sutton & Anderson (1983), "Neuronlike adaptive elements that can solve difficult learning control problems." *IEEE Transactions on Systems, Man, and Cybernetics* 13(5):834–846, [doi:10.1109/TSMC.1983.6313077](https://doi.org/10.1109/TSMC.1983.6313077). Gym Environment: [CartPole-v1](https://gymnasium.farama.org/environments/classic_control/cart_pole/).
 
-## 📚 Documentation
+---
 
-| Document | Description |
-|----------|-------------|
-| **`docs/DATA_ORGANIZATION.md`** | ⭐ Complete data structure, file types, best practices |
-| **`docs/PLOTTING_GUIDE.md`** | 📊 Unified plotting module guide and customization |
-| `docs/ARCHITECTURE.md` | System design and module responsibilities |
-| `docs/PRODUCTION_GUIDE.md` | Deployment and scaling guidelines |
-| `docs/USAGE.md` | Detailed usage examples |
-| `resources/RL_Report.md` | Assignment requirements |
+## Tool Use Statement
 
-## 🔬 Experimental Results
-
-### Sample Output (Smoke Test: 5 seeds)
-
-```
-============================================================
-EXPERIMENT SUMMARY
-============================================================
-total runs: 40
-successful: 40
-failed: 0
-
-runs per algorithm:
-  sarsa: 10 success, 0 skipped, 0 failed
-  qlearning: 10 success, 0 skipped, 0 failed
-  vi: 10 success, 0 skipped, 0 failed
-  pi: 10 success, 0 skipped, 0 failed
-
-Master summaries created: results/raw/*/master_summary.json
-Plots generated: results/figures/*.png
-```
-
-### Key Findings (from master_summary.json)
-
-**Blackjack:**
-- SARSA mean return: -0.39 ± 0.03 (690 episodes to threshold)
-- Q-Learning mean return: -0.40 ± 0.03 (760 episodes to threshold)
-- VI converges in 7 iterations, PI in 3 iterations
-
-**CartPole:**
-- SARSA mean return: 22.23 ± 0.69 (1150 episodes to threshold)
-- Q-Learning mean return: 22.34 ± 0.62 (800 episodes to threshold)
-- VI converges in 2 iterations, PI in 3 iterations
-
-## 🎓 Report Compliance
-
-This implementation satisfies all CS 7641 RL report requirements:
-
-✅ **30-50 seeds**: Configurable via `default.yaml`  
-✅ **3+ hyperparameters validated**: α, γ, ε, bins  
-✅ **Convergence tracking**: Delta (VI), policy changes (PI), TD errors (SARSA/Q-Learning)  
-✅ **Statistical aggregation**: Mean + IQR/95% CI across seeds  
-✅ **Discretization analysis**: Multiple bin configurations tested  
-✅ **All algorithms × environments**: SARSA, Q-Learning, VI, PI on Blackjack & CartPole  
-
-## 📖 References
-
--   Sutton & Barto (2018). _Reinforcement Learning: An Introduction_ (2nd ed.)
--   Watkins & Dayan (1992). _Q-learning._ Machine Learning, 8(3-4), 279-292
--   Barto, Sutton & Anderson (1983). _Neuronlike adaptive elements..._
-
-## 📝 Development Notes
-
-- All code documented with lower-case comments following project style
-- Artifacts saved automatically: Q-tables, policies, value functions
-- Master summaries provide single source of truth for aggregated metrics
-- Publication-quality plots (300 DPI) generated automatically
-
-See `.github/copilot-instructions.md` for detailed coding guidelines.
-
-```
-rl/
-|
-├── src/
-│   ├── environments/
-│   │   ├── blackjack_wrapper.py      # Gymnasium + seed control
-│   │   └── cartpole_discretizer.py   # Non-uniform bins, explicit edges
-│   │
-│   ├── algorithms/
-│   │   ├── value_iteration.py        # VI/PI with convergence tracking
-│   │   ├── policy_iteration.py
-│   │   ├── sarsa.py                  # On-policy TD learning
-│   │   └── qlearning.py              # Off-policy + Double Q option
-│   │
-│   ├── utils/
-│   │   ├── seeding.py                # Unified seed control (np, random, gym)
-│   │   ├── logging.py                # CSV logging: episode, return, ΔQ, wallclock
-│   │   └── plotting.py               # Generate all figures in one call
-│   │
-│   └── config/                     # YAML configuration files
-│       ├── default.yaml           # γ=0.99, α=0.5→0.1, ε=1.0→0.01
-│       │                          # CartPole bins=[3,3,8,12], clamps=[-2.4,2.4,-0.209,0.209]
-│       └── hyperparam_ranges.yaml # Log-scale ranges for hyperparameter search
-│
-├── run_experiments.py          # SINGLE COMMAND: python run_experiments.py --all
-│                               # Parallelizes 50 seeds, runs all experiments
-└── results/                    # Auto-created, gitignored
-    ├── raw/                   # seed_1234_vi_blackjack.csv
-    ├── aggregated/            # vi_blackjack_mean_iqr.csv
-    └── figures/               # learning_curves_vi_pi.png
-```
-
-### Quick Start
-
-#### Installation
-
-```bash
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-#### Running Experiments
-
-**Single command for full reproduction:**
-
-```bash
-python src/main.py
-```
-
-This will:
-
-1. Run all configured algorithms (SARSA, Q-Learning) on both environments
-2. Execute with configured seeds (default: [0, 1])
-3. Save raw CSVs to `results/raw/` with stable filenames
-4. Save metadata JSON to `results/raw/` with comprehensive RL metrics
-5. Complete in ~1-2 minutes (2 algorithms × 2 environments × 2 seeds × 100 episodes)
-
-**Run specific experiment:**
-
-```bash
-# Edit src/config/default.yaml to set:
-# experiments:
-#   algorithms: ["sarsa"]
-#   environments: ["cartpole"]
-# seeds: [42]
-
-python src/main.py
-```
-
-### Configuration
-
-Hyperparameters are stored in YAML files under `src/config/`:
-
-**`src/config/default.yaml`** - Default hyperparameters:
-
--   Learning rate: α = 0.1
--   Discount factor: γ = 0.99
--   Exploration: ε = 0.1
--   Training episodes: 100
--   CartPole discretization: bins=[3,3,8,12]
--   Seeds: [0, 1] for quick testing
--   Algorithms: ["sarsa", "qlearning"] (model-free only)
-
-**`src/config/hyperparam_ranges.yaml`** - Search ranges:
-
--   Log-scale ranges for α, ε-decay, γ
--   Discretization bin configurations
--   Stage 1-4 search automation (coarse → fine)
-
-**Why this approach is superior:**
-
--   Graders change ONE number → re-run identical experiment
--   No code edits required
--   Version control tracks all hyperparameter changes
-
-### Results
-
-After running experiments:
-
--   **`results/raw/`**: Individual experiment outputs:
-    -   CSVs with 15 columns of per-episode metrics: returns, steps, TD errors, Q-changes, exploration ratios, entropy, etc.
-    -   JSON metadata files with comprehensive RL report metrics (30+ summary statistics)
-    -   Organized by algorithm and environment: `results/raw/sarsa/cartpole/`, `results/raw/qlearning/blackjack/`, etc.
--   **JSON Metadata Structure** (4 sections):
-    1. **experiment**: name, algorithm, environment, seed, timestamp, duration
-    2. **hyperparameters**: alpha, gamma, epsilon, episodes, discretization bins
-    3. **environment_info**: state/action spaces, bounds, command
-    4. **results**: 6 subsections with 30+ aggregate metrics:
-        - **returns**: mean, median, std, Q1, Q3, IQR, min, max, first/last means
-        - **episodes**: mean/max/final episode lengths
-        - **convergence**: TD error trends, Q-change trends, entropy decrease
-        - **exploration**: mean/final exploration ratios
-        - **sample_efficiency**: improvement metrics
-        - **stability**: std, coefficient of variation
-
-### Model-Based vs Model-Free Algorithms
-
-This implementation focuses on **model-free reinforcement learning** (SARSA, Q-Learning) because:
-
-1. **Blackjack**: Transition model P unavailable (stochastic card dealing, deck composition)
-2. **CartPole**: Continuous dynamics make explicit P construction prohibitively expensive
-
-**Value Iteration and Policy Iteration** are **model-based algorithms** that require:
-
--   Explicit transition probabilities P(s'|s,a) for all state-action pairs
--   Complete state enumeration
--   Full MDP specification
-
-While VI/PI algorithms are implemented (`src/algorithms/value_iteration.py`, `src/algorithms/policy_iteration.py`), they cannot run on these environments without building explicit transition models. See `docs/VI_PI_LIMITATIONS.md` for detailed analysis.
-
-**For the RL report**: Compare SARSA (on-policy) vs Q-Learning (off-policy) on both environments, and discuss VI/PI theoretically as model-based alternatives.
-
-LaTeX report structure in `report/`:
-
-```bash
-cd report
-pdflatex main.tex
-bibtex main
-pdflatex main.tex
-pdflatex main.tex
-```
-
-Or upload to Overleaf for compilation.
-
-### Report Compilation
-
-### Reproducibility
-
-All experiments use:
-
--   Fixed seeds (specified in `src/config/default.yaml`)
--   Stable filenames for outputs by default (no timestamps), so repeated runs replace previous outputs
--   Wall-clock timing for computational analysis
--   Unified seeding: `random`, `numpy`, `torch`, gymnasium
-
-**To reproduce results:**
-
-```bash
-# Exact command to run all experiments:
-python src/main.py
-
-# Verify output structure (stable filenames, no timestamps):
-ls results/raw/sarsa/cartpole/    # sarsa_cartpole.csv, sarsa_cartpole.json
-ls results/raw/sarsa/blackjack/   # sarsa_blackjack.csv, sarsa_blackjack.json
-ls results/raw/qlearning/cartpole/ # qlearning_cartpole.csv, qlearning_cartpole.json
-ls results/raw/qlearning/blackjack/ # qlearning_blackjack.csv, qlearning_blackjack.json
-```
-
-**Increase statistical power:**
-
-```yaml
-# Edit src/config/default.yaml:
-seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] # 10 seeds
-episodes: 500 # Longer training
-```
-
-### Key Features
-
-1. **Comprehensive metrics**: 15 columns per episode CSV + 30+ summary statistics in JSON
-2. **RL report ready**: JSON contains all metrics mentioned in report requirements (Q1, Q3, IQR, convergence indicators, exploration stats, sample efficiency, stability)
-3. **Stable filenames**: Repeated runs overwrite previous outputs (no timestamp accumulation)
-4. **Model-free focus**: SARSA and Q-Learning work directly with environments (no P required)
-5. **Organized output**: Results organized by algorithm and environment for easy analysis
-6. **Explicit discretization**: CartPole bins=[3,3,8,12] for clear state space
-7. **Unified seeding**: Reproducible results across `random`, `numpy`, gymnasium
-
-### Tool Use Statement
-
-This project uses editor and tooling features to accelerate development. If tools or templates were used,
-list them and what they assisted with (for example: editor snippets, template generators, or linters).
-
-All code was reviewed, tested, and modified by the author. Analysis and conclusions are human-authored.
-
-### References
-
--   Sutton & Barto (2018). _Reinforcement Learning: An Introduction_ (2nd ed.). MIT Press.
--   Barto, Sutton & Anderson (1983). _Neuronlike adaptive elements that can solve difficult learning control problems._ IEEE Trans. SMC.
--   Watkins & Dayan (1992). _Q-learning._ Machine Learning, 8(3-4), 279-292.
+This project uses artificial intelligence editor and tooling features to accelerate development (e.g., code suggestions, template generators, linters).
