@@ -1,7 +1,8 @@
 # override parent gitignore to include specific figures for README
-!results/
-!results/figures/
-!results/figures/*.png
+!results/figures/learning_curves.png
+!results/figures/final_performance_comparison.png
+!results/figures/model_based_convergence.png
+!results/figures/cartpole_state_value_heatmaps.png
 
 # still ignore raw data and optional plots
 results/raw/
