@@ -202,6 +202,54 @@ A continuous-state, deterministic physics simulation requiring state discretizat
 
 **Why interesting:** Tests discretization effects—coarse bins cause state aliasing where distinct physical states map to the same discrete state, degrading policy quality.
 
+---
+
+## Results
+
+### Final Performance Comparison
+
+![Final Performance Comparison](results/figures/final_performance_comparison.png)
+
+**Model-Free Performance (40 seeds)**
+
+| Algorithm | Environment | Mean Return | Std | Episodes | Wall Clock |
+|-----------|-------------|-------------|-----|----------|------------|
+| SARSA | Blackjack | -0.103 | 0.004 | 50,000 | 86.7s |
+| SARSA | CartPole | **229.4** | 22.6 | 100,000 | 201.5s |
+| Q-Learning | Blackjack | -0.102 | 0.004 | 50,000 | 91.1s |
+| Q-Learning | CartPole | **228.8** | 18.3 | 100,000 | 177.5s |
+
+**Model-Based Convergence (5 seeds)**
+
+| Algorithm | Environment | Iterations | Mean Return | Wall Clock |
+|-----------|-------------|------------|-------------|------------|
+| VI | Blackjack | 7 | -0.048 | 0.04s |
+| VI | CartPole | 918 | 16.7 | 23.5s |
+| PI | Blackjack | 3 outer + 23 eval | -0.048 | 0.05s |
+| PI | CartPole | 5 outer + 1844 eval | 53.0 | 8.7s |
+
+### Learning Curves
+
+![Learning Curves](results/figures/model_free_learning_curves.png)
+
+SARSA and Q-Learning learning curves showing mean return ± IQR across 40 seeds. Both algorithms converge to near-optimal policies on CartPole (~230 steps), well above the "solved" threshold of 195. On Blackjack, both converge to ~-0.10 return, consistent with the inherent house edge.
+
+### Policy Visualizations
+
+**Blackjack Policy Heatmaps**
+
+![Blackjack Heatmaps](results/figures/blackjack_heatmap.png)
+
+Policy visualization for all four algorithms. Each cell shows the learned action (H=Hit, S=Stand) with diagonal splits for usable ace (lower-right) vs no usable ace (upper-left). Color intensity indicates state value. All algorithms learn similar optimal policies: stand on high player sums (≥17), hit on low sums, with the decision boundary around 12-16 depending on dealer's showing card.
+
+**CartPole Learned Strategy**
+
+![CartPole Strategy](results/figures/cartpole_learned_strategy.png)
+
+Learned policies projected onto pole angle (θ) × angular velocity (θ̇) dimensions. Blue = Push Left, Red = Push Right. Gray cells indicate unvisited states (model-free only). The diagonal pattern shows the correct control strategy: push left when falling right (positive θ with positive θ̇), push right when falling left (negative θ with negative θ̇).
+
+---
+
 ### Model Construction for VI/PI
 
 Since VI and PI require explicit transition probabilities, we construct empirical MDPs:

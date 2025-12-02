@@ -1,0 +1,11 @@
+# override parent gitignore to include specific figures for README
+!results/
+!results/figures/
+!results/figures/*.png
+
+# still ignore raw data and optional plots
+results/raw/
+results/figures/optional/
+results/figures/tables/
+results/hyperparam_search/
+results/discretization_ablation/
