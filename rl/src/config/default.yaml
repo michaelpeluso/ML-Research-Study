@@ -45,9 +45,9 @@ hyperparameters:
     
     # environment-specific episode counts
     # blackjack: stochastic, converges ~6k episodes, use 50k for full policy refinement
-    # cartpole: deterministic, converges ~4k episodes, 10k is sufficient
+    # cartpole: deterministic, converges ~4k episodes, 100k for maximum state coverage
     episodes_blackjack: 50000   # 50k episodes for blackjack (safe margin over 6k convergence)
-    episodes_cartpole:  10000   # 10k episodes for cartpole (sufficient for convergence)
+    episodes_cartpole:  100000  # 100k episodes for cartpole (better state coverage)
 
 # algorithm-specific overrides (from Stage 3 local refinement - Nov 29, 2025)
 # NOTE: hyperparam search ran at production scale (5k/15k/50k blackjack, 1k/3k/10k cartpole)
@@ -58,11 +58,11 @@ sarsa:
     epsilon_floor_blackjack: 0.0061  # minimum exploration
     epsilon_decay_episodes_blackjack: 9927  # ~20% of 50k episodes
     
-    # CARTPOLE (stage 3): mean_return=241.6, 10k episodes
+    # CARTPOLE (stage 3): mean_return=241.6, 100k episodes
     alpha_cartpole:     0.037   # learning rate
     gamma_cartpole:     0.9709  # discount factor
     epsilon_floor_cartpole: 0.0061  # minimum exploration
-    epsilon_decay_episodes_cartpole: 3308  # ~33% of 10k episodes
+    epsilon_decay_episodes_cartpole: 33000  # ~33% of 100k episodes
 
 qlearning:
     # BLACKJACK (stage 3): mean_return=-0.103, 50k episodes
@@ -71,11 +71,11 @@ qlearning:
     epsilon_floor_blackjack: 0.0061  # minimum exploration  
     epsilon_decay_episodes_blackjack: 9927  # ~20% of 50k episodes
     
-    # CARTPOLE (stage 3): mean_return=248.9, 10k episodes
+    # CARTPOLE (stage 3): mean_return=248.9, 100k episodes
     alpha_cartpole:     0.037   # learning rate
     gamma_cartpole:     0.9709  # discount factor
     epsilon_floor_cartpole: 0.0061  # minimum exploration
-    epsilon_decay_episodes_cartpole: 3308  # ~33% of 10k episodes
+    epsilon_decay_episodes_cartpole: 33000  # ~33% of 100k episodes
 
 # value iteration settings
 vi:
@@ -125,4 +125,5 @@ output:
     save_plots:         true
     save_q_tables:      false
     save_policies:      false
+    generate_optional_plots: true   # generate additional analysis plots
     verbose:            true

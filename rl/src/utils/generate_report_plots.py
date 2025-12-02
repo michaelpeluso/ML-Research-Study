@@ -6,15 +6,22 @@ all plotting functionality consolidated:
 - comparative analysis
 
 usage:
-    python -c "from utils.generate_report_plots import generate_all_plots; generate_all_plots()"
+    python src/utils/generate_report_plots.py
 """
+import sys
+from pathlib import Path
+
+# add src to path for imports
+src_path = Path(__file__).parent.parent
+if str(src_path) not in sys.path:
+    sys.path.insert(0, str(src_path))
+
 import json
 import yaml
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from pathlib import Path
 from typing import Dict, Optional
 from matplotlib.patches import Polygon
 import matplotlib.colors as mcolors
@@ -262,7 +269,7 @@ def plot_final_performance_comparison(results_dir: Path, output_dir: Path):
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
     
     colors = {
-        'vi': '#8B4513',
+        'vi': "#A861AC",
         'pi': '#2E8B57', 
         'sarsa': '#E24A33',
         'qlearning': '#348ABD'
@@ -337,7 +344,9 @@ def plot_final_performance_comparison(results_dir: Path, output_dir: Path):
                 ax.set_ylim(-0.25, 0.1)
             else:
                 ax.axhline(y=195, color='green', linestyle='--', alpha=0.6, linewidth=1.5, label='Solved threshold (195)')
-                ax.set_ylim(0, 270)
+                # auto-scale y-axis to fit all bars + error bars with 10% padding
+                max_height = max(m + s for m, s in zip(means, stds))
+                ax.set_ylim(0, max_height * 1.15)
             # legend entry for the reference line to explain green dotted key
             handles, labels = ax.get_legend_handles_labels()
             if labels:
@@ -1494,6 +1503,8 @@ def generate_all_plots(results_dir: Optional[Path] = None, output_dir: Optional[
     - cartpole q-value differences (action preferences)
     - cartpole intuitive summary (key scenarios explained)
     - final performance comparison bar chart
+    
+    If output.generate_optional_plots is True in config, also generates optional plots.
     """
     if results_dir is None:
         results_dir = Path(__file__).parent.parent.parent / 'results'
@@ -1504,11 +1515,20 @@ def generate_all_plots(results_dir: Optional[Path] = None, output_dir: Optional[
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
+    # load config to check optional plots flag
+    config_path = Path(__file__).parent.parent / 'config' / 'default.yaml'
+    generate_optional = False
+    if config_path.exists():
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+        generate_optional = config.get('output', {}).get('generate_optional_plots', False)
+    
     print("\n" + "="*60)
     print("GENERATING REPORT PLOTS (8-PAGE OPTIMIZED)")
     print("="*60)
     print(f"results: {results_dir}")
-    print(f"output: {output_dir}\n")
+    print(f"output: {output_dir}")
+    print(f"optional plots: {'enabled' if generate_optional else 'disabled'}\n")
     
     # NOTE: VI/PI convergence is better as a TABLE in the report text
     # Blackjack: VI=7 iter, PI=4 outer + 26 eval
@@ -1548,6 +1568,10 @@ def generate_all_plots(results_dir: Optional[Path] = None, output_dir: Optional[
     
     # === GENERATE CSV SUMMARIES ===
     export_summary_csvs(results_dir, output_dir)
+    
+    # === GENERATE OPTIONAL PLOTS (if enabled in config) ===
+    if generate_optional:
+        generate_optional_plots(results_dir, output_dir)
 
 
 def export_summary_csvs(results_dir: Path, output_dir: Path):
@@ -1735,39 +1759,41 @@ def plot_cartpole_simple_visualization(results_dir: Path, output_dir: Path):
     - Gray background: Unvisited states (model-free only)
     """
     
-    # create environment and discretizer
+    # create environment
     env = gym.make('CartPole-v1')
-    discretizer = StateDiscretizer(env, bins=[4, 4, 10, 12])
     
     # algorithm configs - same order as blackjack (VI, PI top row; SARSA, Q-Learning bottom)
+    # bins differ: VI/PI use [4,4,10,12], SARSA/Q-Learning use [3,3,8,12]
     algos = [
-        ('vi', 'Value Iteration (VI)', True),
-        ('pi', 'Policy Iteration (PI)', True),
-        ('sarsa', 'SARSA (On-Policy)', False),
-        ('qlearning', 'Q-Learning (Off-Policy)', False),
+        ('vi', 'Value Iteration (VI)', True, [4, 4, 10, 12]),
+        ('pi', 'Policy Iteration (PI)', True, [4, 4, 10, 12]),
+        ('sarsa', 'SARSA (On-Policy)', False, [3, 3, 8, 12]),
+        ('qlearning', 'Q-Learning (Off-Policy)', False, [3, 3, 8, 12]),
     ]
     
     # custom diverging colormap: blue (Push Left) - white - red (Push Right)
     # using a lighter version for better readability
     cmap = plt.cm.coolwarm  # lighter blue-white-red colormap
     
-    # figure sized to accommodate 10x12 heatmaps with minimal whitespace
+    # figure sized to accommodate heatmaps with minimal whitespace
     fig, axes = plt.subplots(2, 2, figsize=(14, 16))
     axes = axes.flatten()
     plt.subplots_adjust(wspace=0.25, hspace=0.20, left=0.08, right=0.88)
     
-    n_theta = discretizer.bins[2]      # 10 angle bins
-    n_thetadot = discretizer.bins[3]   # 12 angular velocity bins
-    
-    # get theta and theta_dot bin edges for axis labels
-    theta_edges = discretizer.bin_edges[2]
-    thetadot_edges = discretizer.bin_edges[3]
-    
-    for idx, (algo, algo_name, is_model_based) in enumerate(algos):
+    for idx, (algo, algo_name, is_model_based, bins) in enumerate(algos):
         ax = axes[idx]
         
-        # load policy
-        data_dir = results_dir / algo / 'cartpole'
+        # create algorithm-specific discretizer
+        discretizer = StateDiscretizer(env, bins=bins)
+        n_theta = discretizer.bins[2]      # angle bins (8 or 10)
+        n_thetadot = discretizer.bins[3]   # angular velocity bins (12)
+        
+        # get theta and theta_dot bin edges for axis labels
+        theta_edges = discretizer.bin_edges[2]
+        thetadot_edges = discretizer.bin_edges[3]
+        
+        # load policy (data is in results/raw/{algo}/cartpole/)
+        data_dir = results_dir / 'raw' / algo / 'cartpole'
         policy_files = sorted(data_dir.glob(f'{algo}_cartpole_seed*_policy.npy'))
         
         if not policy_files:

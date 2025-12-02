@@ -314,19 +314,19 @@ Contains mean, std, median, Q1, Q3, IQR, convergence stats across all seeds.
 Edit `src/config/default.yaml` to customize experiments:
 
 ```yaml
-smoke_test: false          # true = 5 seeds
-seeds: [0, 1, ..., 49]     # exact seed list
+smoke_test: false          # true = 5 seeds, 5k episodes
+seeds: [0, 1, ..., 39]     # 40 seeds (report requires 30-50)
 
 experiments:
   algorithms: [sarsa, qlearning, vi, pi]
   environments: [blackjack, cartpole]
 
-sarsa:
-  blackjack: {alpha: 0.0011, gamma: 0.9511, epsilon: 1.0, episodes: 2000}
-  cartpole: {alpha: 0.8123, gamma: 0.9908, epsilon: 1.0, episodes: 2000}
+hyperparameters:
+  episodes_cartpole: 100000   # maximum state coverage
+  episodes_blackjack: 50000   # sufficient for convergence
 
 cartpole:
-  bins: [4, 4, 10, 12]     # discretization
+  bins: [3, 3, 8, 12]      # discretization (864 states)
   samples_per_sa: 50       # for VI/PI transition model
 ```
 
