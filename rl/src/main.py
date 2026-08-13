@@ -154,7 +154,7 @@ def main():
             # otherwise epsilon barely decays during short smoke test runs
             scale_factor = smoke_episodes / prod_episodes
             
-            for algo in ['sarsa', 'qlearning']:
+            for algo in ['sarsa', 'qlearning', 'vi', 'pi']:
                 if algo in config:
                     for key in list(config[algo].keys()):
                         if 'epsilon_decay_episodes' in key:
@@ -163,7 +163,7 @@ def main():
                             config[algo][key] = scaled
                             
         print("\n[SMOKE TEST] using reduced seeds and episodes")
-        print(f"    epsilon decay scaled to {scale_factor:.1%} of production")
+        print(f"    epsilon decay scaled to {scale_factor:.1%} of production") # type: ignore
         print("    set smoke_test: false in config/default.yaml for production runs\n")
     
     # extract experiment settings from config
